@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/test-sqlite-schema.mjs && node tests/test-image-picker.mjs && node tests/test-share-intent.mjs && node tests/test-analyze-pipeline.mjs && node tests/test-ocr-service.mjs && node tests/test-text-extraction.mjs && node tests/test-translation-service.mjs && node tests/test-entity-service.mjs && node tests/test-reminder-service.mjs"
+    "test": "node tests/test-sqlite-schema.mjs && node tests/test-image-picker.mjs && node tests/test-share-intent.mjs && node tests/test-analyze-pipeline.mjs && node tests/test-ocr-service.mjs && node tests/test-text-extraction.mjs && node tests/test-translation-service.mjs && node tests/test-entity-service.mjs && node tests/test-reminder-service.mjs && node tests/test-library-screen.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

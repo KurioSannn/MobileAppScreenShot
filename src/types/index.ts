@@ -143,3 +143,13 @@ export interface ScreenshotWithDetails extends ScreenshotRow {
   tags?: string[];
   reminder_count?: number;
 }
+
+export type ScreenshotProcessingStatus = 'Translated' | 'Analyzed' | 'Pending';
+
+export interface LibraryItem extends ScreenshotRow {
+  language: string | null;
+  ocr_text: string | null;
+  translated_text: string | null;
+  reminder_count: number;
+  status: ScreenshotProcessingStatus;
+}

@@ -1,5 +1,10 @@
 import { getDatabase } from '../client';
-import { ScreenshotRow, ScreenshotCategory, ScreenshotWithDetails } from '../../types';
+import {
+  ScreenshotRow,
+  ScreenshotCategory,
+  ScreenshotWithDetails,
+  LibraryItem,
+} from '../../types';
 
 export interface CreateScreenshotInput {
   id: string;
@@ -87,6 +92,67 @@ export const screenshotRepository = {
   },
 
   /**
+   * Retrieves screenshots formatted for the Library screen, joined with OCR language,
+   * text preview, translation status, and reminder count.
+   */
+  async getLibraryScreenshots(
+    category: ScreenshotCategory | 'All' = 'All',
+    limit = 50,
+    offset = 0
+  ): Promise<LibraryItem[]> {
+    const db = await getDatabase();
+    const isAll = !category || category === 'All';
+
+    const sql = `
+      SELECT 
+        s.id,
+        s.image_uri,
+        s.width,
+        s.height,
+        s.created_at,
+        s.source_app,
+        s.category,
+        s.notes,
+        (SELECT ocr.language FROM ocr_results ocr WHERE ocr.screenshot_id = s.id LIMIT 1) AS language,
+        (SELECT ocr.text FROM ocr_results ocr WHERE ocr.screenshot_id = s.id LIMIT 1) AS ocr_text,
+        (SELECT tr.translated_text FROM translations tr WHERE tr.screenshot_id = s.id LIMIT 1) AS translated_text,
+        (SELECT COUNT(*) FROM reminders r WHERE r.screenshot_id = s.id) AS reminder_count
+      FROM screenshots s
+      ${isAll ? '' : 'WHERE s.category = ?'}
+      ORDER BY s.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const params = isAll ? [limit, offset] : [category, limit, offset];
+    const rows = await db.getAllAsync<any>(sql, params);
+
+    return rows.map((row) => {
+      let status: 'Translated' | 'Analyzed' | 'Pending' = 'Pending';
+      if (row.translated_text && row.translated_text.trim().length > 0) {
+        status = 'Translated';
+      } else if (row.ocr_text && row.ocr_text.trim().length > 0) {
+        status = 'Analyzed';
+      }
+
+      return {
+        id: row.id,
+        image_uri: row.image_uri,
+        width: row.width,
+        height: row.height,
+        created_at: row.created_at,
+        source_app: row.source_app,
+        category: row.category,
+        notes: row.notes,
+        language: row.language ?? null,
+        ocr_text: row.ocr_text ?? null,
+        translated_text: row.translated_text ?? null,
+        reminder_count: Number(row.reminder_count ?? 0),
+        status,
+      };
+    });
+  },
+
+  /**
    * Performs full-text keyword search across OCR results, translations, notes, and tags.
    */
   async searchScreenshots(query: string, limit = 50): Promise<ScreenshotWithDetails[]> {
@@ -148,6 +214,13 @@ export const screenshotRepository = {
    */
   async deleteScreenshot(id: string): Promise<boolean> {
     const db = await getDatabase();
+    await db.runAsync('DELETE FROM ocr_results WHERE screenshot_id = ?', [id]);
+    await db.runAsync('DELETE FROM translations WHERE screenshot_id = ?', [id]);
+    await db.runAsync('DELETE FROM entities WHERE screenshot_id = ?', [id]);
+    await db.runAsync('DELETE FROM tags WHERE screenshot_id = ?', [id]);
+    await db.runAsync('DELETE FROM manga_regions WHERE screenshot_id = ?', [id]);
+    await db.runAsync('DELETE FROM manga_pages WHERE screenshot_id = ?', [id]);
+    await db.runAsync('UPDATE reminders SET screenshot_id = NULL WHERE screenshot_id = ?', [id]);
     const result = await db.runAsync('DELETE FROM screenshots WHERE id = ?', [id]);
     return result.changes > 0;
   },

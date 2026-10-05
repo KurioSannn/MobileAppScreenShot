@@ -362,10 +362,10 @@ Membuat history screenshot yang berguna.
 - Support delete.
 
 ## Acceptance Criteria
-- [ ] History muncul dari SQLite.
-- [ ] Filter bekerja.
-- [ ] Screenshot dapat dibuka kembali.
-- [ ] Delete menghapus data terkait dengan aman.
+- [x] History muncul dari SQLite.
+- [x] Filter bekerja.
+- [x] Screenshot dapat dibuka kembali.
+- [x] Delete menghapus data terkait dengan aman.
 
 ---
 

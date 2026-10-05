@@ -131,7 +131,9 @@ export default function App() {
       )}
 
       {currentRoute === 'library' && (
-        <LibraryScreen />
+        <LibraryScreen
+          onSelectScreenshot={(sc) => handleOpenAnalyze(sc, [sc])}
+        />
       )}
 
       {currentRoute === 'search' && (
