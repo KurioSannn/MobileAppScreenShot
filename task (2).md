@@ -429,10 +429,10 @@ Menerjemahkan dialog berdasarkan urutan baca dan konteks.
 - Map hasil translation kembali ke bubble masing-masing.
 
 ## Acceptance Criteria
-- [ ] Japanese manga dapat diurutkan right-to-left.
-- [ ] Webtoon dapat diurutkan top-to-bottom.
-- [ ] User dapat override direction.
-- [ ] Translation kembali ke bubble yang benar.
+- [x] Japanese manga dapat diurutkan right-to-left.
+- [x] Webtoon dapat diurutkan top-to-bottom.
+- [x] User dapat override direction.
+- [x] Translation kembali ke bubble yang benar.
 
 ---
 

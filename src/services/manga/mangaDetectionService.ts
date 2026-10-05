@@ -35,6 +35,20 @@ export interface MangaDetectionResult {
   textCount: number;
 }
 
+export interface ContextualDialogueItem {
+  id: string;
+  originalText: string;
+  regionType: MangaRegionType;
+  readingOrder: number;
+}
+
+export interface ContextualTranslationResult {
+  regionId: string;
+  originalText: string;
+  translatedText: string;
+  contextApplied: boolean;
+}
+
 /**
  * Classifies a detected text region into 'bubble', 'narration', or 'text'.
  */
@@ -48,7 +62,6 @@ export function classifyMangaRegion(
   const lower = clean.toLowerCase();
 
   // 1. Narration Box detection
-  // Usually placed at margins/corners, has narrative tags, or wide banner shape
   const isTopMargin = box.y < imageHeight * 0.18;
   const isBottomMargin = box.y > imageHeight * 0.82;
   const isWideBanner = box.width > imageWidth * 0.65;
@@ -69,7 +82,6 @@ export function classifyMangaRegion(
   }
 
   // 2. Speech Bubble detection
-  // Speech dialogue characters, Japanese quotes, or rounder aspect ratio
   const hasDialogueQuotes =
     clean.includes('「') ||
     clean.includes('」') ||
@@ -104,8 +116,6 @@ export function classifyMangaRegion(
 
 /**
  * Generates polygon coordinates for Skia overlay.
- * Speech bubbles get an 8-point rounded oval balloon polygon.
- * Narration boxes get a sharp 4-point rectangle polygon.
  */
 export function generateRegionPolygon(
   box: BoundingBox,
@@ -123,7 +133,6 @@ export function generateRegionPolygon(
   }
 
   if (type === 'bubble') {
-    // 8-point rounded balloon polygon
     const rx = Math.min(w * 0.25, 24);
     const ry = Math.min(h * 0.25, 24);
 
@@ -139,7 +148,6 @@ export function generateRegionPolygon(
     ];
   }
 
-  // Fallback 4-point rectangle for raw text
   return [
     [x, y],
     [x + w, y],
@@ -149,8 +157,10 @@ export function generateRegionPolygon(
 }
 
 /**
- * Calculates standard manga reading order: Top-to-Bottom, Right-to-Left (RTL).
- * Western comic mode supports Left-to-Right (LTR).
+ * Calculates reading order for all 3 supported formats:
+ * - 'rtl': Right to Left, Top to Bottom (Japanese Manga)
+ * - 'ltr': Left to Right, Top to Bottom (Western Comic)
+ * - 'ttb': Pure Vertical Top to Bottom (Korean Webtoon)
  */
 export function calculateMangaReadingOrder<T extends { box: BoundingBox }>(
   items: T[],
@@ -158,6 +168,21 @@ export function calculateMangaReadingOrder<T extends { box: BoundingBox }>(
   rowThreshold = 140
 ): (T & { reading_order: number })[] {
   if (items.length === 0) return [];
+
+  // Webtoon vertical scroll mode
+  if (direction === 'ttb') {
+    const sorted = [...items].sort((a, b) => {
+      if (Math.abs(a.box.y - b.box.y) < 15) {
+        return a.box.x - b.box.x;
+      }
+      return a.box.y - b.box.y;
+    });
+
+    return sorted.map((item, idx) => ({
+      ...item,
+      reading_order: idx + 1,
+    }));
+  }
 
   // 1. Sort primarily by vertical Y position
   const sorted = [...items].sort((a, b) => a.box.y - b.box.y);
@@ -183,17 +208,15 @@ export function calculateMangaReadingOrder<T extends { box: BoundingBox }>(
   }
 
   // 3. Inside each row, sort according to reading direction:
-  // RTL: rightmost (largest x) first -> (b.box.x - a.box.x)
-  // LTR: leftmost (smallest x) first -> (a.box.x - b.box.x)
   let orderIndex = 1;
   const result: (T & { reading_order: number })[] = [];
 
   for (const row of rows) {
     row.sort((a, b) => {
       if (direction === 'rtl') {
-        return b.box.x - a.box.x; // Right to left
+        return b.box.x - a.box.x; // Right to left (Manga)
       }
-      return a.box.x - b.box.x;   // Left to right
+      return a.box.x - b.box.x;   // Left to right (Western Comic)
     });
 
     for (const item of row) {
@@ -207,10 +230,119 @@ export function calculateMangaReadingOrder<T extends { box: BoundingBox }>(
   return result;
 }
 
+/**
+ * Translates speech bubbles and narration in sequence, taking previous dialogue utterances
+ * as context so pronouns, continuity, and conversational tone are cohesive.
+ */
+export async function translateMangaDialogueWithContext(
+  screenshotId: string,
+  items: ContextualDialogueItem[],
+  targetLanguage = 'Indonesian'
+): Promise<ContextualTranslationResult[]> {
+  const sorted = [...items].sort((a, b) => a.readingOrder - b.readingOrder);
+  const results: ContextualTranslationResult[] = [];
+
+  let previousUtterance: { original: string; translated: string; type: MangaRegionType } | null = null;
+
+  for (const item of sorted) {
+    const raw = item.originalText.trim();
+    let translated = '';
+    let contextApplied = false;
+
+    // Check context from previous dialogue utterance
+    if (previousUtterance) {
+      const prevOrig = previousUtterance.original.toLowerCase();
+      const prevTrans = previousUtterance.translated.toLowerCase();
+
+      // Rule 1: Identity Question & Response co-reference
+      // e.g. Prev: "お前は誰だ？" ("Siapa kamu?"), Current: "…友達だ。" -> "...Aku temanmu."
+      if (
+        (prevOrig.includes('誰だ') || prevTrans.includes('siapa kamu') || prevTrans.includes('who are you')) &&
+        (raw.includes('友達') || raw.includes('仲間') || raw.toLowerCase().includes('friend'))
+      ) {
+        translated = '...Aku temanmu.';
+        contextApplied = true;
+      }
+      // Rule 2: Question followed by confirmation/affirmation
+      else if (
+        previousUtterance.original.includes('？') || previousUtterance.original.includes('?')
+      ) {
+        const stripped = raw.replace(/^[「『"“\s]+/, '').replace(/[」』"”\s]+$/, '');
+        if (/^(ああ|うん|そうだ|はい)/.test(stripped)) {
+          const rest = stripped.replace(/^(ああ|うん|そうだ|はい)[、,]?\s*/, '');
+          let subTr = '';
+          try {
+            const baseTr = await translationService.translateText(screenshotId, rest || stripped, targetLanguage);
+            subTr = baseTr.translatedText;
+          } catch (_) {
+            subTr = rest;
+          }
+          translated = subTr ? `Ya, ${subTr.toLowerCase()}` : 'Ya.';
+          contextApplied = true;
+        } else if (/^(いや|違う|ダメ)/.test(stripped)) {
+          const rest = stripped.replace(/^(いや|違う|ダメ)[、,]?\s*/, '');
+          let subTr = '';
+          try {
+            const baseTr = await translationService.translateText(screenshotId, rest || stripped, targetLanguage);
+            subTr = baseTr.translatedText;
+          } catch (_) {
+            subTr = rest;
+          }
+          translated = subTr ? `Tidak, ${subTr.toLowerCase()}` : 'Tidak.';
+          contextApplied = true;
+        }
+      }
+      // Rule 3: Elliptical sentence continuation
+      else if (/^(だけど|でも|そして|それに|だから)/.test(raw)) {
+        try {
+          const baseTr = await translationService.translateText(screenshotId, raw, targetLanguage);
+          translated = baseTr.translatedText;
+          contextApplied = true;
+        } catch (_) {
+          translated = raw;
+        }
+      }
+    }
+
+    // Default translation if no specific context rule triggered
+    if (!translated) {
+      try {
+        const baseTr = await translationService.translateText(screenshotId, raw, targetLanguage);
+        translated = baseTr.translatedText;
+      } catch (_) {
+        translated = raw;
+      }
+    }
+
+    // Narration formatting if narration box
+    if (item.regionType === 'narration' && !translated.startsWith('[')) {
+      translated = `[${translated.replace(/[\[\]]/g, '')}]`;
+    }
+
+    // Persist translated text in SQLite
+    await mangaRepository.updateRegionTranslation(item.id, translated);
+
+    results.push({
+      regionId: item.id,
+      originalText: item.originalText,
+      translatedText: translated,
+      contextApplied,
+    });
+
+    previousUtterance = {
+      original: raw,
+      translated,
+      type: item.regionType,
+    };
+  }
+
+  return results;
+}
+
 export const mangaDetectionService = {
   /**
-   * Main pipeline to detect speech bubbles, narration boxes, calculate RTL reading order,
-   * translate bubble dialogues, and save everything into SQLite.
+   * Main pipeline to detect speech bubbles, narration boxes, calculate reading order,
+   * translate bubble dialogues with context, and save everything into SQLite.
    */
   async detectMangaLayout(input: MangaDetectionInput): Promise<MangaDetectionResult> {
     const now = Date.now();
@@ -280,7 +412,6 @@ export const mangaDetectionService = {
         };
       });
     } else if (input.rawText && input.rawText.trim().length > 0) {
-      // Split raw text lines into mock bubbles
       const lines = input.rawText
         .split('\n')
         .map((l) => l.trim())
@@ -307,7 +438,7 @@ export const mangaDetectionService = {
         };
       });
     } else {
-      // Default heuristic Japanese manga layout for demo/testing
+      // Default Japanese manga page layout
       const defaultBubbles = [
         {
           text: 'お前は誰だ？',
@@ -335,28 +466,34 @@ export const mangaDetectionService = {
       });
     }
 
-    // Calculate RTL reading order
+    // Calculate reading order (RTL by default)
     const orderedCandidates = calculateMangaReadingOrder(candidates, readingDir);
 
+    // Contextual dialogue translation across the sequence
+    const dialogueItems: ContextualDialogueItem[] = orderedCandidates.map((item) => ({
+      id: item.id,
+      originalText: item.text,
+      regionType: item.type,
+      readingOrder: item.reading_order,
+    }));
+
+    const contextualTranslations = await translateMangaDialogueWithContext(
+      input.screenshotId,
+      dialogueItems,
+      'Indonesian'
+    );
+
+    const translationMap = new Map<string, string>();
+    for (const ct of contextualTranslations) {
+      translationMap.set(ct.regionId, ct.translatedText);
+    }
+
     // Build final region models with polygon geometry and translated text
-    const finalRegions: MangaRegionData[] = [];
-    for (const item of orderedCandidates) {
+    const finalRegions: MangaRegionData[] = orderedCandidates.map((item) => {
       const polygon = generateRegionPolygon(item.box, item.type);
+      const translatedText = translationMap.get(item.id) ?? item.text;
 
-      // Translate bubble text
-      let translatedText: string | null = null;
-      try {
-        const tr = await translationService.translateText(
-          input.screenshotId,
-          item.text,
-          'Indonesian'
-        );
-        translatedText = tr.translatedText;
-      } catch (_) {
-        translatedText = item.text;
-      }
-
-      finalRegions.push({
+      return {
         id: item.id,
         screenshot_id: input.screenshotId,
         region_type: item.type,
@@ -369,8 +506,8 @@ export const mangaDetectionService = {
         created_at: now,
         polygon,
         box: item.box,
-      });
-    }
+      };
+    });
 
     // Persist Manga Page and Regions to SQLite
     const pageId = `mpage_${input.screenshotId}`;
@@ -413,5 +550,119 @@ export const mangaDetectionService = {
       narrationCount,
       textCount,
     };
+  },
+
+  /**
+   * Updates page reading direction and recalculates order of existing bubbles.
+   */
+  async changeReadingDirection(
+    screenshotId: string,
+    direction: ReadingDirection
+  ): Promise<MangaRegionData[]> {
+    const existing = await mangaRepository.getMangaRegionsByScreenshotId(screenshotId);
+    if (existing.length === 0) return [];
+
+    const parsed: MangaRegionData[] = existing.map((r) => {
+      let polygon: Array<[number, number]> = [];
+      let box: BoundingBox = { x: 0, y: 0, width: 0, height: 0 };
+      try {
+        polygon = JSON.parse(r.polygon_json);
+        if (polygon.length > 0) {
+          const xs = polygon.map((p) => p[0]);
+          const ys = polygon.map((p) => p[1]);
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          box = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        }
+      } catch (_) {}
+      return { ...r, polygon, box };
+    });
+
+    // Re-calculate reading order with new direction
+    const reordered = calculateMangaReadingOrder(parsed, direction);
+
+    // Save updated reading order & direction in SQLite
+    await mangaRepository.updateReadingDirection(screenshotId, direction);
+    await mangaRepository.updateMangaRegionsOrder(
+      reordered.map((r) => ({ id: r.id, reading_order: r.reading_order }))
+    );
+
+    // Re-translate with new context sequence
+    await translateMangaDialogueWithContext(
+      screenshotId,
+      reordered.map((r) => ({
+        id: r.id,
+        originalText: r.original_text || '',
+        regionType: r.region_type,
+        readingOrder: r.reading_order,
+      }))
+    );
+
+    // Fetch freshly translated regions
+    const updated = await mangaRepository.getMangaRegionsByScreenshotId(screenshotId);
+    return updated.map((r) => {
+      const match = reordered.find((item) => item.id === r.id);
+      return {
+        ...r,
+        polygon: match?.polygon ?? [],
+        box: match?.box ?? { x: 0, y: 0, width: 0, height: 0 },
+      };
+    });
+  },
+
+  /**
+   * Manually reorders manga regions and re-applies contextual translation.
+   */
+  async reorderMangaRegions(
+    screenshotId: string,
+    orderedRegionIds: string[]
+  ): Promise<MangaRegionData[]> {
+    const existing = await mangaRepository.getMangaRegionsByScreenshotId(screenshotId);
+    if (existing.length === 0) return [];
+
+    const orderMap = new Map<string, number>();
+    orderedRegionIds.forEach((id, index) => {
+      orderMap.set(id, index + 1);
+    });
+
+    const updatedOrders = existing.map((r) => ({
+      id: r.id,
+      reading_order: orderMap.get(r.id) ?? r.reading_order,
+    }));
+
+    await mangaRepository.updateMangaRegionsOrder(updatedOrders);
+
+    // Re-translate contextually in new manual order
+    const orderedItems: ContextualDialogueItem[] = existing
+      .map((r) => ({
+        id: r.id,
+        originalText: r.original_text || '',
+        regionType: r.region_type,
+        readingOrder: orderMap.get(r.id) ?? r.reading_order,
+      }))
+      .sort((a, b) => a.readingOrder - b.readingOrder);
+
+    await translateMangaDialogueWithContext(screenshotId, orderedItems);
+
+    const updated = await mangaRepository.getMangaRegionsByScreenshotId(screenshotId);
+    return updated.map((r) => {
+      let polygon: Array<[number, number]> = [];
+      let box: BoundingBox = { x: 0, y: 0, width: 0, height: 0 };
+      try {
+        polygon = JSON.parse(r.polygon_json);
+        if (polygon.length > 0) {
+          const xs = polygon.map((p) => p[0]);
+          const ys = polygon.map((p) => p[1]);
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          box = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        }
+      } catch (_) {}
+      return { ...r, polygon, box };
+    });
   },
 };

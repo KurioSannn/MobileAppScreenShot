@@ -127,4 +127,33 @@ export const mangaRepository = {
     );
     return result.changes > 0;
   },
+
+  /**
+   * Updates reading direction of a manga page.
+   */
+  async updateReadingDirection(screenshotId: string, direction: ReadingDirection): Promise<boolean> {
+    const db = await getDatabase();
+    const result = await db.runAsync(
+      'UPDATE manga_pages SET reading_direction = ? WHERE screenshot_id = ?',
+      [direction, screenshotId]
+    );
+    return result.changes > 0;
+  },
+
+  /**
+   * Updates reading order for multiple manga regions in a transaction.
+   */
+  async updateMangaRegionsOrder(
+    orderedRegions: Array<{ id: string; reading_order: number }>
+  ): Promise<void> {
+    const db = await getDatabase();
+    await db.withTransactionAsync(async () => {
+      for (const item of orderedRegions) {
+        await db.runAsync(
+          'UPDATE manga_regions SET reading_order = ? WHERE id = ?',
+          [item.reading_order, item.id]
+        );
+      }
+    });
+  },
 };

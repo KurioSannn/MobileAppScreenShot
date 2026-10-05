@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   LayoutChangeEvent,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,9 +14,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { StatusBadge } from '../../components';
+import { StatusBadge, PrimaryButton } from '../../components';
 import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
-import { ScreenshotRow } from '../../types';
+import { ReadingDirection, ScreenshotRow } from '../../types';
 import { mangaDetectionService, MangaRegionData } from '../../services/manga';
 import { pickSingleScreenshot } from '../../utils';
 import { MangaSkiaOverlay } from './MangaSkiaOverlay';
@@ -27,10 +29,12 @@ export interface MangaScreenProps {
 export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreenshot = null }) => {
   const [screenshot, setScreenshot] = useState<ScreenshotRow | null>(initialScreenshot);
   const [mode, setMode] = useState<'translated' | 'original'>('translated');
+  const [readingDir, setReadingDir] = useState<ReadingDirection>('rtl');
   const [regions, setRegions] = useState<MangaRegionData[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<MangaRegionData | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [isReordering, setIsReordering] = useState(false);
 
   // Run manga detection pipeline whenever active screenshot changes
   useEffect(() => {
@@ -47,11 +51,12 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
         imageWidth: targetW,
         imageHeight: targetH,
         rawText: screenshot?.notes ?? undefined,
-        readingDirection: 'rtl',
+        readingDirection: readingDir,
       })
       .then((res) => {
         if (isCurrent) {
           setRegions(res.regions);
+          setReadingDir(res.readingDirection);
           setLoading(false);
         }
       })
@@ -84,6 +89,59 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
     setMode(newMode);
   };
 
+  // Change reading direction (RTL -> LTR -> TTB)
+  const handleChangeDirection = async (newDir: ReadingDirection) => {
+    if (newDir === readingDir) return;
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (_) {}
+
+    setReadingDir(newDir);
+    setLoading(true);
+
+    const targetId = screenshot?.id ?? 'demo_manga_page';
+    try {
+      const updated = await mangaDetectionService.changeReadingDirection(targetId, newDir);
+      setRegions(updated);
+    } catch (err) {
+      console.warn('Failed to change reading direction:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Manual Reorder: Move bubble up in reading sequence
+  const handleMoveBubble = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= regions.length) return;
+
+    try {
+      Haptics.selectionAsync();
+    } catch (_) {}
+
+    const newRegions = [...regions];
+    const temp = newRegions[index]!;
+    newRegions[index] = newRegions[targetIndex]!;
+    newRegions[targetIndex] = temp;
+
+    // Re-assign reading orders 1-based
+    const orderedIds = newRegions.map((r) => r.id);
+    setRegions(
+      newRegions.map((r, idx) => ({
+        ...r,
+        reading_order: idx + 1,
+      }))
+    );
+
+    const targetId = screenshot?.id ?? 'demo_manga_page';
+    try {
+      const reordered = await mangaDetectionService.reorderMangaRegions(targetId, orderedIds);
+      setRegions(reordered);
+    } catch (err) {
+      console.warn('Failed to save manual reorder:', err);
+    }
+  };
+
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     if (width > 0 && height > 0) {
@@ -103,24 +161,64 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Manga Mode</Text>
-          <View style={styles.readingDirPill}>
-            <Text style={styles.readingDirText}>RTL (Right to Left) 📖</Text>
-          </View>
+          <Text style={styles.headerSub}>Contextual Dialogue Translation</Text>
         </View>
         <TouchableOpacity onPress={handlePickManga} style={styles.iconBtn} activeOpacity={0.7}>
           <Ionicons name="images-outline" size={20} color={Colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
-      {/* Detection Stats Banner */}
+      {/* Reading Direction Selector Bar */}
+      <View style={styles.directionBar}>
+        <View style={styles.dirSegmentContainer}>
+          <TouchableOpacity
+            style={[styles.dirBtn, readingDir === 'rtl' && styles.dirBtnActive]}
+            onPress={() => handleChangeDirection('rtl')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.dirBtnText, readingDir === 'rtl' && styles.dirBtnTextActive]}>
+              RTL (Manga 🇯🇵)
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dirBtn, readingDir === 'ltr' && styles.dirBtnActive]}
+            onPress={() => handleChangeDirection('ltr')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.dirBtnText, readingDir === 'ltr' && styles.dirBtnTextActive]}>
+              LTR (Comic 🇺🇸)
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dirBtn, readingDir === 'ttb' && styles.dirBtnActive]}
+            onPress={() => handleChangeDirection('ttb')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.dirBtnText, readingDir === 'ttb' && styles.dirBtnTextActive]}>
+              TTB (Webtoon 🇰🇷)
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Detection Stats & Reorder Button */}
       <View style={styles.statsBanner}>
         <View style={styles.statsLeft}>
           <Ionicons name="scan-outline" size={16} color={Colors.info} />
           <Text style={styles.statsText}>
-            {regions.length} regions detected ({bubbleCount} bubbles, {narrationCount} narration)
+            {regions.length} regions ({bubbleCount} bubbles, {narrationCount} narration)
           </Text>
         </View>
-        <StatusBadge label="RTL Order" status="info" />
+        <TouchableOpacity
+          style={styles.reorderTriggerBtn}
+          onPress={() => setIsReordering(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="swap-vertical-outline" size={14} color={Colors.info} />
+          <Text style={styles.reorderTriggerText}>Reorder</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Manga Canvas Viewer Container */}
@@ -166,7 +264,7 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
           {loading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.loadingText}>Detecting speech bubbles & reading order...</Text>
+              <Text style={styles.loadingText}>Processing reading order & context...</Text>
             </View>
           )}
         </View>
@@ -199,7 +297,7 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
             </View>
             <View style={styles.textBlockDivider} />
             <View style={styles.textBlock}>
-              <Text style={styles.textBlockLabel}>Translated (ID)</Text>
+              <Text style={styles.textBlockLabel}>Contextual Translation</Text>
               <Text style={styles.translatedSnippet}>{selectedRegion.translated_text || '—'}</Text>
             </View>
           </View>
@@ -246,6 +344,81 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Manual Reorder Modal */}
+      <Modal
+        visible={isReordering}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsReordering(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Manual Reading Order</Text>
+                <Text style={styles.modalSub}>
+                  Adjust dialogue sequence for contextual translation
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsReordering(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+              {regions.map((item, idx) => (
+                <View key={item.id} style={styles.reorderRow}>
+                  <View style={styles.reorderBadge}>
+                    <Text style={styles.reorderBadgeText}>#{item.reading_order}</Text>
+                  </View>
+                  <View style={styles.reorderInfo}>
+                    <Text style={styles.reorderOriginal} numberOfLines={1}>
+                      {item.original_text}
+                    </Text>
+                    <Text style={styles.reorderTranslated} numberOfLines={1}>
+                      {item.translated_text}
+                    </Text>
+                  </View>
+                  <View style={styles.reorderActionCol}>
+                    <TouchableOpacity
+                      disabled={idx === 0}
+                      onPress={() => handleMoveBubble(idx, 'up')}
+                      style={[styles.arrowBtn, idx === 0 && styles.arrowBtnDisabled]}
+                    >
+                      <Ionicons
+                        name="chevron-up"
+                        size={18}
+                        color={idx === 0 ? Colors.borderStrong : Colors.textPrimary}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={idx === regions.length - 1}
+                      onPress={() => handleMoveBubble(idx, 'down')}
+                      style={[
+                        styles.arrowBtn,
+                        idx === regions.length - 1 && styles.arrowBtnDisabled,
+                      ]}
+                    >
+                      <Ionicons
+                        name="chevron-down"
+                        size={18}
+                        color={idx === regions.length - 1 ? Colors.borderStrong : Colors.textPrimary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <PrimaryButton
+              label="Done Reordering"
+              onPress={() => setIsReordering(false)}
+              style={styles.modalDoneBtn}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -260,7 +433,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
   },
   headerTitleContainer: {
     alignItems: 'center',
@@ -270,17 +444,11 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weight.heavy,
     color: Colors.textPrimary,
   },
-  readingDirPill: {
-    backgroundColor: Colors.infoLight,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: Radius.pill,
-    marginTop: 2,
-  },
-  readingDirText: {
+  headerSub: {
     fontSize: 10,
-    fontWeight: '700',
-    color: Colors.info,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+    marginTop: 1,
   },
   iconBtn: {
     width: 40,
@@ -291,6 +459,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  directionBar: {
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.xs,
+  },
+  dirSegmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.pill,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  dirBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dirBtnActive: {
+    backgroundColor: Colors.info,
+  },
+  dirBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  dirBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   statsBanner: {
     flexDirection: 'row',
@@ -314,6 +514,20 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.xs,
     fontWeight: '600',
     color: Colors.textSecondary,
+  },
+  reorderTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.infoLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+  },
+  reorderTriggerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.info,
   },
   canvasContainer: {
     flex: 1,
@@ -477,5 +691,89 @@ const styles = StyleSheet.create({
   toggleTextActive: {
     color: Colors.textPrimary,
     fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.card,
+    borderTopRightRadius: Radius.card,
+    padding: Spacing.xl,
+    maxHeight: '80%',
+    gap: Spacing.md,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: Typography.size.lg,
+    fontWeight: Typography.weight.bold,
+    color: Colors.textPrimary,
+  },
+  modalSub: {
+    fontSize: Typography.size.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  modalList: {
+    maxHeight: 320,
+  },
+  reorderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    gap: Spacing.sm,
+  },
+  reorderBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.info,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reorderBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  reorderInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  reorderOriginal: {
+    fontSize: Typography.size.xs,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  reorderTranslated: {
+    fontSize: Typography.size.xs,
+    color: Colors.info,
+    fontStyle: 'italic',
+  },
+  reorderActionCol: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  arrowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowBtnDisabled: {
+    opacity: 0.3,
+  },
+  modalDoneBtn: {
+    marginTop: Spacing.sm,
   },
 });
