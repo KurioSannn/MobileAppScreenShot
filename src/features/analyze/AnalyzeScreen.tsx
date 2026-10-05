@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
+  Clipboard,
   Image,
   SafeAreaView,
   ScrollView,
@@ -20,12 +22,15 @@ import {
 import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
 import { ScreenshotRow } from '../../types';
 import { pickMultipleScreenshots, pickSingleScreenshot } from '../../utils';
+import { PIPELINE_STEPS, useAnalyzePipeline } from '../../hooks';
 
 interface AnalyzeScreenProps {
   onBack: () => void;
   onOpenMangaMode?: () => void;
   initialScreenshot?: ScreenshotRow | null;
   initialBatch?: ScreenshotRow[];
+  intentError?: string | null;
+  onClearError?: () => void;
   onScreenshotSelected?: (screenshot: ScreenshotRow) => void;
 }
 
@@ -34,6 +39,8 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
   onOpenMangaMode,
   initialScreenshot = null,
   initialBatch = [],
+  intentError = null,
+  onClearError,
   onScreenshotSelected,
 }) => {
   const [currentScreenshot, setCurrentScreenshot] = useState<ScreenshotRow | null>(
@@ -44,6 +51,19 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
   );
   const [activeBatchIndex, setActiveBatchIndex] = useState(0);
   const [isPicking, setIsPicking] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+
+  // Progressive analysis pipeline hook
+  const pipeline = useAnalyzePipeline(currentScreenshot);
+
+  // Sync with prop changes when an incoming intent opens
+  React.useEffect(() => {
+    if (initialScreenshot) {
+      setCurrentScreenshot(initialScreenshot);
+      setBatchScreenshots(initialBatch.length > 0 ? initialBatch : [initialScreenshot]);
+      setActiveBatchIndex(0);
+    }
+  }, [initialScreenshot, initialBatch]);
 
   // Handle single screenshot import from gallery
   const handlePickSingle = async () => {
@@ -113,6 +133,33 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
     }
   };
 
+  const handleCopyExtracted = (text: string) => {
+    Clipboard.setString(text);
+    setCopiedSnippet(true);
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (_) {}
+    setTimeout(() => setCopiedSnippet(false), 2000);
+  };
+
+  const isStepDone = (key: string): boolean => {
+    if (pipeline.isCompleted) return true;
+    if (pipeline.currentStep === 'finding_actions') {
+      return key === 'reading_image' || key === 'detecting_text' || key === 'detecting_language';
+    }
+    if (pipeline.currentStep === 'detecting_language') {
+      return key === 'reading_image' || key === 'detecting_text';
+    }
+    if (pipeline.currentStep === 'detecting_text') {
+      return key === 'reading_image';
+    }
+    return false;
+  };
+
+  const isStepActive = (key: string): boolean => {
+    return pipeline.currentStep === key;
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Top Header */}
@@ -137,8 +184,37 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Screenshot Preview or Empty Import State */}
-        {currentScreenshot ? (
+        {/* Invalid File Error State (from Android share intent) */}
+        {intentError && !currentScreenshot ? (
+          <Card variant="surface" padding={Spacing.xl} style={styles.errorCard}>
+            <View style={styles.errorIconCircle}>
+              <Ionicons name="alert-circle-outline" size={44} color={Colors.danger} />
+            </View>
+            <Text style={styles.errorTitle}>Invalid Shared File</Text>
+            <Text style={styles.errorSubtitle}>{intentError}</Text>
+
+            <View style={styles.importButtonsWrapper}>
+              <PrimaryButton
+                label="Choose Screenshot from Gallery"
+                onPress={() => {
+                  onClearError?.();
+                  handlePickSingle();
+                }}
+                loading={isPicking}
+                icon={<Ionicons name="images" size={18} color={Colors.textPrimary} />}
+              />
+              <SecondaryButton
+                label="Back to Home"
+                onPress={() => {
+                  onClearError?.();
+                  onBack();
+                }}
+                icon={<Ionicons name="home-outline" size={18} color={Colors.textPrimary} />}
+              />
+            </View>
+          </Card>
+        ) : currentScreenshot ? (
+          /* Preview state: Screenshot is displayed immediately! */
           <View style={styles.previewContainer}>
             <View style={styles.imageCard}>
               <Image
@@ -210,7 +286,7 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
               </View>
             )}
 
-            {/* Metadata Chips Bar */}
+            {/* Metadata Bar */}
             <Card variant="surface" padding={Spacing.md} style={styles.metadataCard}>
               <View style={styles.metadataRow}>
                 <StatusBadge label={currentScreenshot.category} status="neutral" />
@@ -234,7 +310,7 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
               </View>
             </Card>
 
-            {/* Quick Action Buttons for Changing Image */}
+            {/* Quick Change / Batch Buttons */}
             <View style={styles.actionButtonRow}>
               <SecondaryButton
                 label="Change Image"
@@ -251,6 +327,179 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
                 style={{ flex: 1 }}
               />
             </View>
+
+            {/* Progressive Processing Pipeline Status Card */}
+            <Card variant="surface" padding={Spacing.lg} style={styles.pipelineCard}>
+              <View style={styles.pipelineHeaderRow}>
+                <View style={styles.pipelineTitleContainer}>
+                  <Text style={styles.pipelineTitle}>Analysis Pipeline</Text>
+                  <Text style={styles.pipelineSubtitle}>
+                    {pipeline.isProcessing && `Processing (${pipeline.progress}%)`}
+                    {pipeline.isCompleted && 'Analysis complete'}
+                    {pipeline.isCancelled && 'Analysis paused'}
+                  </Text>
+                </View>
+
+                {/* Cancel or Retry Controls */}
+                {pipeline.isProcessing && (
+                  <TouchableOpacity
+                    style={styles.cancelChip}
+                    onPress={pipeline.cancelPipeline}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="close-circle-outline" size={16} color={Colors.danger} />
+                    <Text style={styles.cancelChipText}>Cancel</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(pipeline.isCancelled || pipeline.isCompleted) && (
+                  <TouchableOpacity
+                    style={styles.retryChip}
+                    onPress={pipeline.retryPipeline}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="reload-outline" size={15} color={Colors.textPrimary} />
+                    <Text style={styles.retryChipText}>Retry</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Progress Track */}
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressBar,
+                    {
+                      width: `${pipeline.progress}%`,
+                      backgroundColor: pipeline.isCancelled ? Colors.warning : Colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+
+              {/* Step Rows */}
+              <View style={styles.stepsList}>
+                {PIPELINE_STEPS.map((step) => {
+                  const done = isStepDone(step.key);
+                  const active = isStepActive(step.key);
+                  const cancelled = pipeline.isCancelled && active;
+
+                  return (
+                    <View key={step.key} style={styles.stepItemRow}>
+                      <View style={styles.stepIconBox}>
+                        {done ? (
+                          <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+                        ) : active && !cancelled ? (
+                          <ActivityIndicator size="small" color={Colors.primary} />
+                        ) : cancelled ? (
+                          <Ionicons name="pause-circle" size={20} color={Colors.warning} />
+                        ) : (
+                          <View style={styles.stepPendingDot} />
+                        )}
+                      </View>
+                      <View style={styles.stepTextContainer}>
+                        <Text
+                          style={[
+                            styles.stepLabel,
+                            done && styles.stepDoneLabel,
+                            active && !cancelled && styles.stepActiveLabel,
+                            cancelled && styles.stepCancelledLabel,
+                          ]}
+                        >
+                          {step.label}
+                        </Text>
+                        <Text style={styles.stepDescription}>{step.description}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </Card>
+
+            {/* Progressive Result 1: Extracted OCR Text Preview */}
+            {pipeline.extractedTextPreview && (
+              <Card variant="surface" padding={Spacing.lg} style={styles.resultCard}>
+                <View style={styles.resultHeaderRow}>
+                  <View style={styles.resultHeaderLeft}>
+                    <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
+                    <Text style={styles.resultTitle}>Detected Text Preview</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.copySnippetBtn}
+                    onPress={() => handleCopyExtracted(pipeline.extractedTextPreview!)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={copiedSnippet ? 'checkmark-outline' : 'copy-outline'}
+                      size={15}
+                      color={Colors.textPrimary}
+                    />
+                    <Text style={styles.copySnippetText}>
+                      {copiedSnippet ? 'Copied!' : 'Copy'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.snippetBox}>
+                  <Text style={styles.snippetText}>{pipeline.extractedTextPreview}</Text>
+                </View>
+
+                {pipeline.detectedLanguage && (
+                  <View style={styles.langPillRow}>
+                    <Text style={styles.langPillLabel}>Language:</Text>
+                    <StatusBadge label={pipeline.detectedLanguage} status="info" />
+                  </View>
+                )}
+              </Card>
+            )}
+
+            {/* Progressive Result 2: Suggested Actions */}
+            {pipeline.suggestedActions.length > 0 && (
+              <Card variant="surface" padding={Spacing.lg} style={styles.actionsCard}>
+                <Text style={styles.actionsTitle}>Suggested Actions</Text>
+                <View style={styles.actionChipRow}>
+                  {pipeline.suggestedActions.map((action) => (
+                    <TouchableOpacity
+                      key={action.id}
+                      style={[
+                        styles.actionChip,
+                        action.type === 'manga' && styles.actionChipHighlighted,
+                      ]}
+                      onPress={() => {
+                        try {
+                          Haptics.selectionAsync();
+                        } catch (_) {}
+                        if (action.type === 'manga' && onOpenMangaMode) {
+                          onOpenMangaMode();
+                        } else if (action.type === 'copy' && pipeline.extractedTextPreview) {
+                          handleCopyExtracted(pipeline.extractedTextPreview);
+                        }
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name={action.iconName as any}
+                        size={17}
+                        color={action.type === 'manga' ? '#6847B8' : Colors.textPrimary}
+                      />
+                      <Text
+                        style={[
+                          styles.actionChipText,
+                          action.type === 'manga' && { color: '#6847B8', fontWeight: '700' },
+                        ]}
+                      >
+                        {action.label}
+                      </Text>
+                      {action.badge && (
+                        <View style={styles.actionSmallBadge}>
+                          <Text style={styles.actionSmallBadgeText}>{action.badge}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Card>
+            )}
           </View>
         ) : (
           /* Empty state: User has not selected a screenshot yet */
@@ -279,72 +528,6 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
             </View>
           </Card>
         )}
-
-        {/* Progressive Processing Steps Pipeline */}
-        <Card variant="surface" padding={Spacing.lg} style={styles.stepsCard}>
-          <Text style={styles.stepsTitle}>Analysis Pipeline</Text>
-
-          <View style={styles.stepRow}>
-            <Ionicons
-              name={currentScreenshot ? 'checkmark-circle' : 'ellipse-outline'}
-              size={20}
-              color={currentScreenshot ? Colors.success : Colors.textMuted}
-            />
-            <Text
-              style={[
-                styles.stepText,
-                currentScreenshot ? styles.stepDoneText : styles.stepPendingText,
-              ]}
-            >
-              1. Reading image metadata & preview
-            </Text>
-          </View>
-
-          <View style={styles.stepRow}>
-            <View style={styles.stepActiveDot} />
-            <Text style={styles.stepActiveText}>2. Detecting text regions & layout</Text>
-          </View>
-
-          <View style={styles.stepRow}>
-            <View style={styles.stepPendingDot} />
-            <Text style={styles.stepPendingText}>3. Identifying language & entities</Text>
-          </View>
-
-          <View style={styles.stepRow}>
-            <View style={styles.stepPendingDot} />
-            <Text style={styles.stepPendingText}>4. Suggesting relevant actions</Text>
-          </View>
-        </Card>
-
-        {/* Suggested Actions Preview */}
-        <Card variant="surface" padding={Spacing.lg} style={styles.actionsCard}>
-          <Text style={styles.actionsTitle}>Suggested Actions</Text>
-          <View style={styles.actionChipRow}>
-            <TouchableOpacity style={styles.actionChip} activeOpacity={0.75}>
-              <Ionicons name="language-outline" size={16} color={Colors.textPrimary} />
-              <Text style={styles.actionChipText}>Translate</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionChip}
-              onPress={onOpenMangaMode}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="book-outline" size={16} color={Colors.textPrimary} />
-              <Text style={styles.actionChipText}>Manga Mode</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionChip} activeOpacity={0.75}>
-              <Ionicons name="copy-outline" size={16} color={Colors.textPrimary} />
-              <Text style={styles.actionChipText}>Copy Text</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionChip} activeOpacity={0.75}>
-              <Ionicons name="alarm-outline" size={16} color={Colors.textPrimary} />
-              <Text style={styles.actionChipText}>Reminder</Text>
-            </TouchableOpacity>
-          </View>
-        </Card>
       </ScrollView>
     </SafeAreaView>
   );
@@ -377,7 +560,7 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   previewContainer: {
-    gap: Spacing.sm + 2,
+    gap: Spacing.md,
   },
   imageCard: {
     height: 300,
@@ -455,7 +638,216 @@ const styles = StyleSheet.create({
   actionButtonRow: {
     flexDirection: 'row',
     gap: Spacing.md,
+  },
+  pipelineCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: Spacing.md,
+  },
+  pipelineHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pipelineTitleContainer: {
+    gap: 2,
+  },
+  pipelineTitle: {
+    fontSize: Typography.size.md,
+    fontWeight: Typography.weight.bold,
+    color: Colors.textPrimary,
+  },
+  pipelineSubtitle: {
+    fontSize: Typography.size.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.weight.medium,
+  },
+  cancelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.pill,
+    backgroundColor: '#FDEAE2',
+  },
+  cancelChipText: {
+    fontSize: Typography.size.xs,
+    color: Colors.danger,
+    fontWeight: Typography.weight.bold,
+  },
+  retryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  retryChipText: {
+    fontSize: Typography.size.xs,
+    color: Colors.textPrimary,
+    fontWeight: Typography.weight.bold,
+  },
+  progressTrack: {
+    height: 4,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  stepsList: {
+    gap: Spacing.sm + 2,
+  },
+  stepItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm + 2,
+  },
+  stepIconBox: {
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepPendingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E5DFD5',
+  },
+  stepTextContainer: {
+    flex: 1,
+  },
+  stepLabel: {
+    fontSize: Typography.size.sm,
+    color: Colors.textMuted,
+    fontWeight: Typography.weight.medium,
+  },
+  stepDoneLabel: {
+    color: Colors.success,
+    fontWeight: Typography.weight.semibold,
+  },
+  stepActiveLabel: {
+    color: '#B57B14',
+    fontWeight: Typography.weight.bold,
+  },
+  stepCancelledLabel: {
+    color: Colors.warning,
+    fontWeight: Typography.weight.semibold,
+  },
+  stepDescription: {
+    fontSize: Typography.size.xs - 1,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  resultCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: Spacing.sm + 2,
+  },
+  resultHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  resultHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs + 2,
+  },
+  resultTitle: {
+    fontSize: Typography.size.md,
+    fontWeight: Typography.weight.bold,
+    color: Colors.textPrimary,
+  },
+  copySnippetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.xs,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: Radius.pill,
+  },
+  copySnippetText: {
+    fontSize: Typography.size.xs,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.textPrimary,
+  },
+  snippetBox: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.sm,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  snippetText: {
+    fontSize: Typography.size.sm,
+    color: Colors.textPrimary,
+    lineHeight: 20,
+  },
+  langPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     marginTop: 4,
+  },
+  langPillLabel: {
+    fontSize: Typography.size.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.weight.medium,
+  },
+  actionsCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  actionsTitle: {
+    fontSize: Typography.size.md,
+    fontWeight: Typography.weight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.md,
+  },
+  actionChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.background,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  actionChipHighlighted: {
+    backgroundColor: '#EBE6F8',
+    borderColor: '#D8CEF3',
+  },
+  actionChipText: {
+    fontSize: Typography.size.sm,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.textPrimary,
+  },
+  actionSmallBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+  },
+  actionSmallBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.textPrimary,
   },
   emptyImportCard: {
     alignItems: 'center',
@@ -492,83 +884,35 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: Spacing.md,
   },
-  stepsCard: {
-    gap: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  stepsTitle: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.bold,
-    color: Colors.textPrimary,
-    marginBottom: 2,
-  },
-  stepRow: {
-    flexDirection: 'row',
+  errorCard: {
     alignItems: 'center',
-    gap: Spacing.sm + 2,
-  },
-  stepText: {
-    fontSize: Typography.size.sm,
-  },
-  stepDoneText: {
-    color: Colors.success,
-    fontWeight: Typography.weight.semibold,
-  },
-  stepActiveText: {
-    fontSize: Typography.size.sm,
-    color: '#B57B14',
-    fontWeight: Typography.weight.bold,
-  },
-  stepPendingText: {
-    fontSize: Typography.size.sm,
-    color: Colors.textMuted,
-  },
-  stepActiveDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: Colors.primary,
-    marginLeft: 3,
-    marginRight: 3,
-  },
-  stepPendingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E5DFD5',
-    marginLeft: 4,
-    marginRight: 4,
-  },
-  actionsCard: {
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: '#F0CEC5',
+    backgroundColor: '#FFF7F5',
+    paddingVertical: Spacing.xl + 4,
   },
-  actionsTitle: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.bold,
-    color: Colors.textPrimary,
+  errorIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FDEAE2',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  actionChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  actionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.background,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  actionChipText: {
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.semibold,
+  errorTitle: {
+    fontSize: Typography.size.lg,
+    fontWeight: Typography.weight.bold,
     color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  errorSubtitle: {
+    fontSize: Typography.size.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: Spacing.xs + 2,
+    marginBottom: Spacing.xl,
+    lineHeight: 20,
+    maxWidth: '92%',
   },
 });

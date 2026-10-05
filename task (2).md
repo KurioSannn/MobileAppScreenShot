@@ -176,10 +176,10 @@ Analyze
 - Handle invalid input.
 
 ## Acceptance Criteria
-- [ ] Snaply muncul di Android share sheet.
-- [ ] Screenshot dapat dibuka dari share intent.
-- [ ] Tidak perlu membuka Home lebih dulu.
-- [ ] Invalid file memiliki error state.
+- [x] Snaply muncul di Android share sheet.
+- [x] Screenshot dapat dibuka dari share intent.
+- [x] Tidak perlu membuka Home lebih dulu.
+- [x] Invalid file memiliki error state.
 
 ---
 
@@ -199,10 +199,10 @@ Membuat pengalaman analisis screenshot tanpa blank loading screen.
 - Buat cancel/retry state.
 
 ## Acceptance Criteria
-- [ ] Image tampil sebelum processing selesai.
-- [ ] User melihat progress.
-- [ ] Tidak ada fullscreen spinner kosong.
-- [ ] Retry bekerja.
+- [x] Image tampil sebelum processing selesai.
+- [x] User melihat progress.
+- [x] Tidak ada fullscreen spinner kosong.
+- [x] Retry bekerja.
 
 ---
 

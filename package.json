@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/test-sqlite-schema.mjs && node tests/test-image-picker.mjs"
+    "test": "node tests/test-sqlite-schema.mjs && node tests/test-image-picker.mjs && node tests/test-share-intent.mjs && node tests/test-analyze-pipeline.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -17,6 +17,7 @@
     "expo": "~57.0.13",
     "expo-haptics": "~57.0.3",
     "expo-image-picker": "~57.0.20",
+    "expo-linking": "~57.0.11",
     "expo-sqlite": "~57.0.3",
     "expo-status-bar": "~57.0.1",
     "lucide-react-native": "^1.51.0",

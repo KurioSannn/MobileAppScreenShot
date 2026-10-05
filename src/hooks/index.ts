@@ -1,2 +1,2 @@
 // Snaply Hooks Module
-export {};
+export * from './useAnalyzePipeline';
