@@ -248,10 +248,10 @@ User dapat mengambil teks dari screenshot dengan nyaman.
 - Simpan hasil edit sebagai corrected text.
 
 ## Acceptance Criteria
-- [ ] Full text dapat disalin.
-- [ ] Individual region dapat dipilih.
-- [ ] OCR text dapat diedit.
-- [ ] Perubahan disimpan.
+- [x] Full text dapat disalin.
+- [x] Individual region dapat dipilih.
+- [x] OCR text dapat diedit.
+- [x] Perubahan disimpan.
 
 ---
 

@@ -64,14 +64,22 @@ export interface UseAnalyzePipelineReturn {
   isCancelled: boolean;
   error: string | null;
   extractedTextPreview: string | null;
+  rawText: string | null;
+  correctedText: string | null;
+  isCorrected: boolean;
   detectedLanguage: string | null;
   detectedEntities: DetectedEntityPreview[];
   suggestedActions: SuggestedActionItem[];
   boundingBoxes: BoundingBox[];
+  blocks: Array<{ id: string; text: string; box: BoundingBox }>;
+  selectedBlockId: string | null;
   ocrConfidence: number;
   startPipeline: () => void;
   cancelPipeline: () => void;
   retryPipeline: () => void;
+  selectBlock: (id: string | null) => void;
+  saveEditedText: (newText: string) => Promise<void>;
+  revertToOriginal: () => Promise<void>;
 }
 
 /**
@@ -87,10 +95,14 @@ export function useAnalyzePipeline(
 
   // Progressive results revealed as pipeline moves forward
   const [extractedTextPreview, setExtractedTextPreview] = useState<string | null>(null);
+  const [rawText, setRawText] = useState<string | null>(null);
+  const [correctedText, setCorrectedText] = useState<string | null>(null);
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
   const [detectedEntities, setDetectedEntities] = useState<DetectedEntityPreview[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<SuggestedActionItem[]>([]);
   const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
+  const [blocks, setBlocks] = useState<Array<{ id: string; text: string; box: BoundingBox }>>([]);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [ocrConfidence, setOcrConfidence] = useState(1.0);
 
   const cancelFlagRef = useRef(false);
@@ -125,10 +137,14 @@ export function useAnalyzePipeline(
     setCurrentStep('reading_image');
     setProgress(15);
     setExtractedTextPreview(null);
+    setRawText(null);
+    setCorrectedText(null);
     setDetectedLanguage(null);
     setDetectedEntities([]);
     setSuggestedActions([]);
     setBoundingBoxes([]);
+    setBlocks([]);
+    setSelectedBlockId(null);
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -150,8 +166,11 @@ export function useAnalyzePipeline(
         if (cancelFlagRef.current) return;
 
         // Progressively reveal extracted OCR text & bounding boxes immediately
-        setExtractedTextPreview(ocrResult.text);
+        setRawText(ocrResult.text);
+        setCorrectedText(ocrResult.correctedText ?? null);
+        setExtractedTextPreview(ocrResult.activeText);
         setBoundingBoxes(ocrResult.boundingBoxes);
+        setBlocks(ocrResult.blocks);
         setOcrConfidence(ocrResult.confidence);
         setDetectedLanguage(`${ocrResult.language} (${ocrResult.languageCode})`);
 
@@ -280,6 +299,37 @@ export function useAnalyzePipeline(
     startPipeline();
   }, [startPipeline]);
 
+  const selectBlock = useCallback((id: string | null) => {
+    setSelectedBlockId(id);
+    try {
+      Haptics.selectionAsync();
+    } catch (_) {}
+  }, []);
+
+  const saveEditedText = useCallback(
+    async (newText: string) => {
+      if (!screenshot) return;
+      const trimmed = newText.trim();
+      await ocrService.updateCorrectedText(screenshot.id, trimmed);
+      setCorrectedText(trimmed);
+      setExtractedTextPreview(trimmed);
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (_) {}
+    },
+    [screenshot]
+  );
+
+  const revertToOriginal = useCallback(async () => {
+    if (!screenshot || !rawText) return;
+    await ocrService.revertCorrectedText(screenshot.id);
+    setCorrectedText(null);
+    setExtractedTextPreview(rawText);
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (_) {}
+  }, [screenshot, rawText]);
+
   // Trigger analysis pipeline automatically whenever the target screenshot changes
   useEffect(() => {
     if (screenshot) {
@@ -289,10 +339,14 @@ export function useAnalyzePipeline(
       setCurrentStep('idle');
       setProgress(0);
       setExtractedTextPreview(null);
+      setRawText(null);
+      setCorrectedText(null);
       setDetectedLanguage(null);
       setDetectedEntities([]);
       setSuggestedActions([]);
       setBoundingBoxes([]);
+      setBlocks([]);
+      setSelectedBlockId(null);
     }
 
     return () => {
@@ -314,13 +368,21 @@ export function useAnalyzePipeline(
     isCancelled: currentStep === 'cancelled',
     error,
     extractedTextPreview,
+    rawText,
+    correctedText,
+    isCorrected: !!correctedText && correctedText !== rawText,
     detectedLanguage,
     detectedEntities,
     suggestedActions,
     boundingBoxes,
+    blocks,
+    selectedBlockId,
     ocrConfidence,
     startPipeline,
     cancelPipeline,
     retryPipeline,
+    selectBlock,
+    saveEditedText,
+    revertToOriginal,
   };
 }

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS ocr_results (
   id TEXT PRIMARY KEY NOT NULL,
   screenshot_id TEXT NOT NULL,
   text TEXT NOT NULL,
+  corrected_text TEXT,
   language TEXT,
   confidence REAL NOT NULL DEFAULT 1.0,
   bounds_json TEXT,

@@ -23,6 +23,7 @@ import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
 import { ScreenshotRow } from '../../types';
 import { pickMultipleScreenshots, pickSingleScreenshot } from '../../utils';
 import { PIPELINE_STEPS, useAnalyzePipeline } from '../../hooks';
+import { TextExtractionView } from './TextExtractionView';
 
 interface AnalyzeScreenProps {
   onBack: () => void;
@@ -52,6 +53,7 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
   const [activeBatchIndex, setActiveBatchIndex] = useState(0);
   const [isPicking, setIsPicking] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [showBoundingBoxes, setShowBoundingBoxes] = useState(false);
 
   // Progressive analysis pipeline hook
   const pipeline = useAnalyzePipeline(currentScreenshot);
@@ -222,7 +224,83 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
                 style={styles.previewImage}
                 resizeMode="contain"
               />
+
+              {/* Interactive Bounding Boxes Overlay on Preview Image */}
+              {showBoundingBoxes &&
+                currentScreenshot.width > 0 &&
+                currentScreenshot.height > 0 && (
+                  <View style={styles.boxesOverlayContainer} pointerEvents="box-none">
+                    {pipeline.blocks.map((block, idx) => {
+                      const isSelected = pipeline.selectedBlockId === block.id;
+                      const left = `${(block.box.x / currentScreenshot.width) * 100}%` as any;
+                      const top = `${(block.box.y / currentScreenshot.height) * 100}%` as any;
+                      const width = `${(block.box.width / currentScreenshot.width) * 100}%` as any;
+                      const height = `${(block.box.height / currentScreenshot.height) * 100}%` as any;
+
+                      return (
+                        <TouchableOpacity
+                          key={block.id}
+                          style={[
+                            styles.boxHighlight,
+                            { left, top, width, height },
+                            isSelected && styles.boxHighlightSelected,
+                          ]}
+                          onPress={() =>
+                            pipeline.selectBlock(isSelected ? null : block.id)
+                          }
+                          activeOpacity={0.8}
+                        >
+                          <View
+                            style={[
+                              styles.boxTag,
+                              isSelected && styles.boxTagSelected,
+                            ]}
+                          >
+                            <Text style={styles.boxTagText}>#{idx + 1}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
             </View>
+
+            {/* Region Boxes Toggle Button */}
+            {pipeline.blocks.length > 0 &&
+              currentScreenshot.width > 0 &&
+              currentScreenshot.height > 0 && (
+                <View style={styles.overlayToggleRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.overlayToggleBtn,
+                      showBoundingBoxes && styles.overlayToggleBtnActive,
+                    ]}
+                    onPress={() => {
+                      setShowBoundingBoxes((prev) => !prev);
+                      try {
+                        Haptics.selectionAsync();
+                      } catch (_) {}
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={showBoundingBoxes ? 'scan' : 'scan-outline'}
+                      size={14}
+                      color={showBoundingBoxes ? Colors.primary : Colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.overlayToggleText,
+                        showBoundingBoxes && styles.overlayToggleTextActive,
+                      ]}
+                    >
+                      {showBoundingBoxes
+                        ? 'Hide Region Boxes'
+                        : `Highlight Regions on Image (${pipeline.blocks.length})`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
             {/* Batch Navigation Controls if multiple screenshots */}
             {batchScreenshots.length > 1 && (
@@ -416,59 +494,21 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
               </View>
             </Card>
 
-            {/* Progressive Result 1: Extracted OCR Text Preview */}
-            {pipeline.extractedTextPreview && (
-              <Card variant="surface" padding={Spacing.lg} style={styles.resultCard}>
-                <View style={styles.resultHeaderRow}>
-                  <View style={styles.resultHeaderLeft}>
-                    <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
-                    <Text style={styles.resultTitle}>Detected Text Preview</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.copySnippetBtn}
-                    onPress={() => handleCopyExtracted(pipeline.extractedTextPreview!)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={copiedSnippet ? 'checkmark-outline' : 'copy-outline'}
-                      size={15}
-                      color={Colors.textPrimary}
-                    />
-                    <Text style={styles.copySnippetText}>
-                      {copiedSnippet ? 'Copied!' : 'Copy'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.snippetBox}>
-                  <Text style={styles.snippetText}>{pipeline.extractedTextPreview}</Text>
-                </View>
-
-                <View style={styles.ocrMetaRow}>
-                  {pipeline.detectedLanguage && (
-                    <View style={styles.langPillRow}>
-                      <Text style={styles.langPillLabel}>Language:</Text>
-                      <StatusBadge label={pipeline.detectedLanguage} status="info" />
-                    </View>
-                  )}
-                  {pipeline.boundingBoxes.length > 0 && (
-                    <View style={styles.langPillRow}>
-                      <Text style={styles.langPillLabel}>Regions:</Text>
-                      <StatusBadge
-                        label={`${pipeline.boundingBoxes.length} blocks`}
-                        status="neutral"
-                      />
-                    </View>
-                  )}
-                  <View style={styles.langPillRow}>
-                    <Text style={styles.langPillLabel}>Confidence:</Text>
-                    <StatusBadge
-                      label={`${Math.round(pipeline.ocrConfidence * 100)}%`}
-                      status="success"
-                    />
-                  </View>
-                </View>
-              </Card>
+            {/* Progressive Result 1: Rich Text Extraction & Copy Experience */}
+            {(pipeline.extractedTextPreview || pipeline.blocks.length > 0) && (
+              <TextExtractionView
+                rawText={pipeline.rawText}
+                activeText={pipeline.extractedTextPreview}
+                correctedText={pipeline.correctedText}
+                isCorrected={pipeline.isCorrected}
+                detectedLanguage={pipeline.detectedLanguage}
+                blocks={pipeline.blocks}
+                selectedBlockId={pipeline.selectedBlockId}
+                ocrConfidence={pipeline.ocrConfidence}
+                onSelectBlock={pipeline.selectBlock}
+                onSaveEditedText={pipeline.saveEditedText}
+                onRevertToOriginal={pipeline.revertToOriginal}
+              />
             )}
 
             {/* Progressive Result 2: Suggested Actions */}
@@ -593,6 +633,68 @@ const styles = StyleSheet.create({
   previewImage: {
     width: '100%',
     height: '100%',
+  },
+  boxesOverlayContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  boxHighlight: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245, 176, 49, 0.7)',
+    backgroundColor: 'rgba(245, 176, 49, 0.15)',
+    borderRadius: Radius.xs,
+  },
+  boxHighlightSelected: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(245, 176, 49, 0.4)',
+  },
+  boxTag: {
+    position: 'absolute',
+    top: -14,
+    left: -1,
+    backgroundColor: Colors.secondary,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  boxTagSelected: {
+    backgroundColor: Colors.primary,
+  },
+  boxTagText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: Colors.textInverse,
+  },
+  overlayToggleRow: {
+    alignItems: 'center',
+  },
+  overlayToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  overlayToggleBtnActive: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primary,
+  },
+  overlayToggleText: {
+    fontSize: Typography.size.xs,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.textSecondary,
+  },
+  overlayToggleTextActive: {
+    color: Colors.textPrimary,
   },
   batchPaginationRow: {
     flexDirection: 'row',
@@ -763,69 +865,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.xs - 1,
     color: Colors.textSecondary,
     marginTop: 1,
-  },
-  resultCard: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: Spacing.sm + 2,
-  },
-  resultHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  resultHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs + 2,
-  },
-  resultTitle: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.bold,
-    color: Colors.textPrimary,
-  },
-  copySnippetBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.sm + 2,
-    paddingVertical: Spacing.xs,
-    backgroundColor: Colors.surfaceSubtle,
-    borderRadius: Radius.pill,
-  },
-  copySnippetText: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.textPrimary,
-  },
-  snippetBox: {
-    backgroundColor: Colors.background,
-    borderRadius: Radius.sm,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  snippetText: {
-    fontSize: Typography.size.sm,
-    color: Colors.textPrimary,
-    lineHeight: 20,
-  },
-  ocrMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  langPillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: 4,
-  },
-  langPillLabel: {
-    fontSize: Typography.size.xs,
-    color: Colors.textSecondary,
-    fontWeight: Typography.weight.medium,
   },
   actionsCard: {
     borderWidth: 1,

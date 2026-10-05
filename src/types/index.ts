@@ -32,10 +32,17 @@ export interface ScreenshotRow {
   notes: string | null;
 }
 
+export interface OcrBlock {
+  id: string;
+  text: string;
+  box: BoundingBox;
+}
+
 export interface OcrResultRow {
   id: string;
   screenshot_id: string;
   text: string;
+  corrected_text: string | null;
   language: string | null;
   confidence: number;
   bounds_json: string | null;

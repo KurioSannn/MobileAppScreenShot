@@ -9,11 +9,13 @@ export interface RecognizedOcrData {
   id: string;
   screenshotId: string;
   text: string;
+  correctedText?: string | null;
+  activeText: string;
   language: string;
   languageCode: string;
   confidence: number;
   boundingBoxes: BoundingBox[];
-  blocks: Array<{ text: string; box: BoundingBox }>;
+  blocks: Array<{ id: string; text: string; box: BoundingBox }>;
   createdAt: number;
   isFallback?: boolean;
 }
@@ -74,7 +76,11 @@ export function detectLanguageFromText(text: string): {
 function generateFallbackOcrData(
   screenshotId: string,
   imageUri: string
-): { text: string; blocks: Array<{ text: string; box: BoundingBox }>; boundingBoxes: BoundingBox[] } {
+): {
+  text: string;
+  blocks: Array<{ id: string; text: string; box: BoundingBox }>;
+  boundingBoxes: BoundingBox[];
+} {
   const isManga =
     imageUri.toLowerCase().includes('manga') || screenshotId.toLowerCase().includes('manga');
 
@@ -88,8 +94,8 @@ function generateFallbackOcrData(
       text,
       boundingBoxes: boxes,
       blocks: [
-        { text: 'お前は誰だ？', box: boxes[0]! },
-        { text: '…友達だ。', box: boxes[1]! },
+        { id: 'blk_1', text: 'お前は誰だ？', box: boxes[0]! },
+        { id: 'blk_2', text: '…友達だ。', box: boxes[1]! },
       ],
     };
   }
@@ -103,8 +109,8 @@ function generateFallbackOcrData(
     text,
     boundingBoxes: boxes,
     blocks: [
-      { text: 'Meeting Deadline: Friday 17:00 PM.', box: boxes[0]! },
-      { text: 'Please review final proposal.', box: boxes[1]! },
+      { id: 'blk_1', text: 'Meeting Deadline: Friday 17:00 PM.', box: boxes[0]! },
+      { id: 'blk_2', text: 'Please review final proposal.', box: boxes[1]! },
     ],
   };
 }
@@ -125,7 +131,7 @@ export const ocrService = {
 
     let rawText = '';
     const boundingBoxes: BoundingBox[] = [];
-    const blocks: Array<{ text: string; box: BoundingBox }> = [];
+    const blocks: Array<{ id: string; text: string; box: BoundingBox }> = [];
     let isFallback = false;
 
     // 1. Try native Google ML Kit On-Device Text Recognition
@@ -139,7 +145,7 @@ export const ocrService = {
         rawText = mlKitResult.text.trim();
 
         if (mlKitResult.blocks) {
-          for (const block of mlKitResult.blocks) {
+          mlKitResult.blocks.forEach((block, index) => {
             const frame = block.frame;
             const box: BoundingBox = {
               x: frame?.left ?? 0,
@@ -149,10 +155,11 @@ export const ocrService = {
             };
             boundingBoxes.push(box);
             blocks.push({
+              id: `blk_${index + 1}`,
               text: block.text,
               box,
             });
-          }
+          });
         }
       }
     } catch (nativeError) {
@@ -169,11 +176,16 @@ export const ocrService = {
     const langInfo = detectLanguageFromText(rawText);
     const confidence = isFallback ? 0.95 : 0.98;
 
+    // Check if an existing OCR record exists with user-corrected text
+    const existing = await ocrRepository.getOcrResultByScreenshotId(screenshotId);
+    const correctedText = existing?.corrected_text ?? null;
+
     // 3. Persist OCR result into SQLite database
     await ocrRepository.saveOcrResult({
       id: ocrId,
       screenshot_id: screenshotId,
       text: rawText,
+      corrected_text: correctedText,
       language: langInfo.language,
       confidence,
       bounds_json: JSON.stringify(boundingBoxes),
@@ -184,6 +196,8 @@ export const ocrService = {
       id: ocrId,
       screenshotId,
       text: rawText,
+      correctedText,
+      activeText: correctedText ?? rawText,
       language: langInfo.language,
       languageCode: langInfo.languageCode,
       confidence,
@@ -192,6 +206,20 @@ export const ocrService = {
       createdAt: now,
       isFallback,
     };
+  },
+
+  /**
+   * Updates user-corrected text for an OCR result in SQLite.
+   */
+  async updateCorrectedText(screenshotId: string, correctedText: string): Promise<boolean> {
+    return ocrRepository.updateCorrectedText(screenshotId, correctedText);
+  },
+
+  /**
+   * Reverts corrected text back to raw OCR text.
+   */
+  async revertCorrectedText(screenshotId: string): Promise<boolean> {
+    return ocrRepository.revertCorrectedText(screenshotId);
   },
 
   /**
