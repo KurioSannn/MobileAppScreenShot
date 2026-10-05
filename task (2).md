@@ -332,10 +332,10 @@ User dapat membuat reminder dari screenshot.
 - Trigger local notification.
 
 ## Acceptance Criteria
-- [ ] Reminder dapat dibuat.
-- [ ] Notification muncul sesuai waktu.
-- [ ] Reminder dapat dihapus.
-- [ ] Screenshot asal tetap terhubung ke reminder.
+- [x] Reminder dapat dibuat.
+- [x] Notification muncul sesuai waktu.
+- [x] Reminder dapat dihapus.
+- [x] Screenshot asal tetap terhubung ke reminder.
 
 ---
 

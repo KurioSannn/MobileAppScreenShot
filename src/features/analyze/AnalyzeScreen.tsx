@@ -23,7 +23,12 @@ import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
 import { ScreenshotRow } from '../../types';
 import { pickMultipleScreenshots, pickSingleScreenshot } from '../../utils';
 import { PIPELINE_STEPS, useAnalyzePipeline } from '../../hooks';
-import { TextExtractionView, TranslationCard, EntityChipsView } from './index';
+import {
+  TextExtractionView,
+  TranslationCard,
+  EntityChipsView,
+  ReminderModal,
+} from './index';
 
 interface AnalyzeScreenProps {
   onBack: () => void;
@@ -56,6 +61,9 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
   const [isPicking, setIsPicking] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(false);
+  const [reminderModalVisible, setReminderModalVisible] = useState(false);
+  const [reminderInitialTitle, setReminderInitialTitle] = useState('');
+  const [reminderDateSnippet, setReminderDateSnippet] = useState('');
 
   // Progressive analysis pipeline hook
   const pipeline = useAnalyzePipeline(currentScreenshot);
@@ -144,6 +152,15 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (_) {}
     setTimeout(() => setCopiedSnippet(false), 2000);
+  };
+
+  const handleOpenReminderModal = (title?: string, snippet?: string) => {
+    setReminderInitialTitle(title || 'Screenshot Reminder');
+    setReminderDateSnippet(snippet || title || '');
+    setReminderModalVisible(true);
+    try {
+      Haptics.selectionAsync();
+    } catch (_) {}
   };
 
   const isStepDone = (key: string): boolean => {
@@ -527,11 +544,14 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
               <EntityChipsView
                 entities={pipeline.detectedEntities}
                 onOpenMangaMode={onOpenMangaMode}
-                onCreateReminder={onCreateReminder}
+                onCreateReminder={(title, snippet) => {
+                  onCreateReminder?.(title, snippet);
+                  handleOpenReminderModal(title, snippet);
+                }}
               />
             )}
 
-            {/* Progressive Result 2: Suggested Actions */}
+            {/* Progressive Result 4: Suggested Actions */}
             {pipeline.suggestedActions.length > 0 && (
               <Card variant="surface" padding={Spacing.lg} style={styles.actionsCard}>
                 <Text style={styles.actionsTitle}>Suggested Actions</Text>
@@ -549,6 +569,8 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
                         } catch (_) {}
                         if (action.type === 'manga' && onOpenMangaMode) {
                           onOpenMangaMode();
+                        } else if (action.type === 'reminder') {
+                          handleOpenReminderModal('Event / Deadline Reminder', pipeline.extractedTextPreview || '');
                         } else if (action.type === 'copy' && pipeline.extractedTextPreview) {
                           handleCopyExtracted(pipeline.extractedTextPreview);
                         }
@@ -607,6 +629,15 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
           </Card>
         )}
       </ScrollView>
+
+      {/* Reminder Confirmation Bottom Sheet / Modal */}
+      <ReminderModal
+        visible={reminderModalVisible}
+        onClose={() => setReminderModalVisible(false)}
+        initialTitle={reminderInitialTitle}
+        initialDateSnippet={reminderDateSnippet}
+        screenshotId={currentScreenshot?.id}
+      />
     </SafeAreaView>
   );
 };
