@@ -488,11 +488,11 @@ Membuat Manga Mode terasa seperti reader/editor ringan.
   - translate again
 
 ## Acceptance Criteria
-- [ ] Original/Translated dapat di-toggle tanpa reload.
-- [ ] Selected bubble terlihat jelas.
-- [ ] Floating toolbar bekerja.
-- [ ] Translation dapat diedit.
-- [ ] Reader nyaman digunakan full screen.
+- [x] Original/Translated dapat di-toggle tanpa reload.
+- [x] Selected bubble terlihat jelas.
+- [x] Floating toolbar bekerja.
+- [x] Translation dapat diedit.
+- [x] Reader nyaman digunakan full screen.
 
 ---
 

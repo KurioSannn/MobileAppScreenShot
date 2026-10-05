@@ -665,4 +665,15 @@ export const mangaDetectionService = {
       return { ...r, polygon, box };
     });
   },
+
+  /**
+   * Updates translation text for a specific manga region.
+   */
+  async updateRegionTranslation(
+    regionId: string,
+    newTranslatedText: string
+  ): Promise<boolean> {
+    return await mangaRepository.updateRegionTranslation(regionId, newTranslatedText);
+  },
 };
+

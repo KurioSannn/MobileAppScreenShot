@@ -5,6 +5,12 @@ import { MangaRegionData } from '../../services/manga';
 import { MangaRenderMode } from '../../types';
 import { Colors, Radius, Typography } from '../../theme/tokens';
 
+export interface BubbleStyleOverride {
+  fontSizeDelta?: number;
+  textAlign?: 'left' | 'center' | 'right';
+  opacity?: number;
+}
+
 export interface MangaSkiaOverlayProps {
   regions: MangaRegionData[];
   containerWidth: number;
@@ -15,6 +21,7 @@ export interface MangaSkiaOverlayProps {
   renderMode?: MangaRenderMode;
   selectedRegionId?: string | null;
   onSelectRegion?: (region: MangaRegionData) => void;
+  bubbleStyleOverrides?: Record<string, BubbleStyleOverride>;
 }
 
 /**
@@ -56,6 +63,7 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
   renderMode = 'replace',
   selectedRegionId,
   onSelectRegion,
+  bubbleStyleOverrides,
 }) => {
   if (regions.length === 0 || containerWidth <= 0 || containerHeight <= 0) {
     return null;
@@ -97,6 +105,8 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
 
           const isSelected = selectedRegionId === region.id;
           const isNarration = region.region_type === 'narration';
+          const override = bubbleStyleOverrides?.[region.id];
+          const customOpacity = override?.opacity ?? 1.0;
 
           // Effective render mode: low-confidence fallback uses 'floating' so artwork is never covered
           const effectiveRenderMode: MangaRenderMode =
@@ -104,9 +114,10 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
 
           // 1. Text Replace Mode: Solid clean inpainting fill
           if (effectiveRenderMode === 'replace') {
+            const baseAlpha = (isNarration ? 0.98 : 0.98) * customOpacity;
             const fillColor = isNarration
-              ? 'rgba(255, 252, 235, 0.98)' // Warm parchment for narration
-              : 'rgba(255, 255, 255, 0.98)'; // Clean white inpainting for dialogue
+              ? `rgba(255, 252, 235, ${baseAlpha.toFixed(2)})` // Warm parchment for narration
+              : `rgba(255, 255, 255, ${baseAlpha.toFixed(2)})`; // Clean white inpainting for dialogue
             const strokeColor = isSelected ? '#F5B031' : isNarration ? '#8C7A58' : '#2C2B29';
 
             return (
@@ -124,7 +135,8 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
 
           // 2. Frosted Glass Mode: Semi-transparent blur overlay
           if (effectiveRenderMode === 'glass') {
-            const glassFill = 'rgba(255, 255, 255, 0.52)';
+            const glassAlpha = 0.52 * customOpacity;
+            const glassFill = `rgba(255, 255, 255, ${glassAlpha.toFixed(2)})`;
             const glassStroke = isSelected ? '#F5B031' : 'rgba(255, 255, 255, 0.85)';
 
             return (
@@ -170,8 +182,13 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
             ? region.translated_text || region.original_text || ''
             : region.original_text || '';
 
-        // Dynamic auto-scaling font size
-        const fontSize = calculateAdaptiveFontSize(displayedText, boxW, boxH, 9, 15);
+        const override = bubbleStyleOverrides?.[region.id];
+        const fontDelta = override?.fontSizeDelta ?? 0;
+        const textAlign = override?.textAlign ?? 'center';
+
+        // Dynamic auto-scaling font size with custom user delta
+        const baseFontSize = calculateAdaptiveFontSize(displayedText, boxW, boxH, 9, 15);
+        const fontSize = Math.max(8, baseFontSize + fontDelta);
         const lineHeight = Math.round(fontSize * 1.25);
 
         // Effective render mode (low confidence defaults to floating)
@@ -204,17 +221,17 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
               <Text style={styles.orderNumber}>{region.reading_order}</Text>
             </View>
 
-            {/* Bubble Typeset Text with Adaptive Font Sizing */}
-            <View style={styles.textContainer}>
+            {/* Bubble Typeset Text with Adaptive Font Sizing & Alignment */}
+            <View style={[styles.textContainer, textAlign === 'left' && { alignItems: 'flex-start' }, textAlign === 'right' && { alignItems: 'flex-end' }]}>
               {effectiveRenderMode === 'floating' ? (
                 <View style={styles.floatingSubtitlePill}>
                   <Text
                     style={[
                       styles.floatingSubtitleText,
-                      { fontSize, lineHeight },
+                      { fontSize, lineHeight, textAlign },
                       mode === 'original' && styles.originalJapaneseText,
                     ]}
-                    numberOfLines={4}
+                    numberOfLines={5}
                   >
                     {displayedText}
                   </Text>
@@ -223,12 +240,12 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
                 <Text
                   style={[
                     styles.bubbleText,
-                    { fontSize, lineHeight },
+                    { fontSize, lineHeight, textAlign },
                     region.region_type === 'narration' && styles.narrationText,
                     mode === 'original' && styles.originalJapaneseText,
                     effectiveRenderMode === 'glass' && styles.glassText,
                   ]}
-                  numberOfLines={5}
+                  numberOfLines={6}
                 >
                   {displayedText}
                 </Text>
