@@ -141,6 +141,16 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- 10. metrics_events table
+CREATE TABLE IF NOT EXISTS metrics_events (
+  id TEXT PRIMARY KEY NOT NULL,
+  event_name TEXT NOT NULL,
+  payload_json TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_metrics_events_name ON metrics_events(event_name);
 `;
 
 export const MIGRATIONS: Migration[] = [
@@ -148,4 +158,17 @@ export const MIGRATIONS: Migration[] = [
     name: '001_initial_schema',
     sql: INITIAL_MIGRATION_SQL,
   },
+  {
+    name: '002_add_metrics_table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS metrics_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        event_name TEXT NOT NULL,
+        payload_json TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_metrics_events_name ON metrics_events(event_name);
+    `,
+  },
 ];
+

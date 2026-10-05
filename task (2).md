@@ -568,13 +568,13 @@ Siapkan event ringan:
 - processing_duration
 
 ## Acceptance Criteria
-- [ ] UI tidak freeze saat processing normal.
-- [ ] App dapat digunakan offline untuk fitur lokal.
-- [ ] Core flow tidak membutuhkan login.
-- [ ] Tidak ada subscription/paywall pada MVP.
-- [ ] Data dapat dihapus oleh user.
-- [ ] Error tidak menyebabkan app crash.
-- [ ] Build siap masuk internal/closed beta testing.
+- [x] UI tidak freeze saat processing normal.
+- [x] App dapat digunakan offline untuk fitur lokal.
+- [x] Core flow tidak membutuhkan login.
+- [x] Tidak ada subscription/paywall pada MVP.
+- [x] Data dapat dihapus oleh user.
+- [x] Error tidak menyebabkan app crash.
+- [x] Build siap masuk internal/closed beta testing.
 
 ---
 

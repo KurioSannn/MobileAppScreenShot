@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { Alert } from 'react-native';
-import { screenshotRepository } from '../db';
+import { screenshotRepository, settingsRepository } from '../db';
 import { ScreenshotCategory, ScreenshotRow } from '../types';
 
 export interface PickedImageResult {
@@ -72,17 +72,32 @@ export async function pickSingleScreenshot(
 
     const newId = generateScreenshotId();
     const now = Date.now();
+    const isHistoryDisabled = await settingsRepository.getBooleanSetting('disable_history', false);
 
-    const savedScreenshot = await screenshotRepository.createScreenshot({
-      id: newId,
-      image_uri: asset.uri,
-      width: asset.width ?? 0,
-      height: asset.height ?? 0,
-      created_at: now,
-      category,
-      source_app: asset.fileName ?? null,
-      notes: null,
-    });
+    let savedScreenshot: ScreenshotRow;
+    if (isHistoryDisabled) {
+      savedScreenshot = {
+        id: newId,
+        image_uri: asset.uri,
+        width: asset.width ?? 0,
+        height: asset.height ?? 0,
+        created_at: now,
+        category,
+        source_app: asset.fileName ?? null,
+        notes: null,
+      };
+    } else {
+      savedScreenshot = await screenshotRepository.createScreenshot({
+        id: newId,
+        image_uri: asset.uri,
+        width: asset.width ?? 0,
+        height: asset.height ?? 0,
+        created_at: now,
+        category,
+        source_app: asset.fileName ?? null,
+        notes: null,
+      });
+    }
 
     return {
       canceled: false,
@@ -124,22 +139,37 @@ export async function pickMultipleScreenshots(
 
     const savedScreenshots: ScreenshotRow[] = [];
     const now = Date.now();
+    const isHistoryDisabled = await settingsRepository.getBooleanSetting('disable_history', false);
 
     for (let i = 0; i < result.assets.length; i++) {
       const asset = result.assets[i];
       if (!asset) continue;
       const newId = generateScreenshotId();
 
-      const saved = await screenshotRepository.createScreenshot({
-        id: newId,
-        image_uri: asset.uri,
-        width: asset.width ?? 0,
-        height: asset.height ?? 0,
-        created_at: now + i, // slight offset to maintain selected order
-        category,
-        source_app: asset.fileName ?? null,
-        notes: null,
-      });
+      let saved: ScreenshotRow;
+      if (isHistoryDisabled) {
+        saved = {
+          id: newId,
+          image_uri: asset.uri,
+          width: asset.width ?? 0,
+          height: asset.height ?? 0,
+          created_at: now + i,
+          category,
+          source_app: asset.fileName ?? null,
+          notes: null,
+        };
+      } else {
+        saved = await screenshotRepository.createScreenshot({
+          id: newId,
+          image_uri: asset.uri,
+          width: asset.width ?? 0,
+          height: asset.height ?? 0,
+          created_at: now + i, // slight offset to maintain selected order
+          category,
+          source_app: asset.fileName ?? null,
+          notes: null,
+        });
+      }
       savedScreenshots.push(saved);
     }
 

@@ -267,4 +267,40 @@ export const screenshotRepository = {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM screenshots');
   },
+
+  /**
+   * Deletes all screenshots from storage and cascades deletion of all child tables.
+   */
+  async clearAllHistory(): Promise<void> {
+    const db = await getDatabase();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('DELETE FROM ocr_results');
+      await db.runAsync('DELETE FROM translations');
+      await db.runAsync('DELETE FROM entities');
+      await db.runAsync('DELETE FROM tags');
+      await db.runAsync('DELETE FROM manga_regions');
+      await db.runAsync('DELETE FROM manga_pages');
+      await db.runAsync('UPDATE reminders SET screenshot_id = NULL');
+      await db.runAsync('DELETE FROM screenshots');
+    });
+  },
+
+  /**
+   * Completely purges the entire database tables.
+   */
+  async clearLocalDatabase(): Promise<void> {
+    const db = await getDatabase();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('DELETE FROM ocr_results');
+      await db.runAsync('DELETE FROM translations');
+      await db.runAsync('DELETE FROM entities');
+      await db.runAsync('DELETE FROM tags');
+      await db.runAsync('DELETE FROM reminders');
+      await db.runAsync('DELETE FROM manga_regions');
+      await db.runAsync('DELETE FROM manga_pages');
+      await db.runAsync('DELETE FROM screenshots');
+      await db.runAsync('DELETE FROM metrics_events');
+    });
+  },
 };
+
