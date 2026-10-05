@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Snaply",
+    "slug": "snaply",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.snaply.app",
+      "versionCode": 1
+    },
+    "ios": {
+      "bundleIdentifier": "com.snaply.app",
+      "buildNumber": "1.0.0",
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
+  }
+}
