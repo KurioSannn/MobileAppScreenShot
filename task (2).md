@@ -227,11 +227,11 @@ Membaca teks screenshot secara lokal.
 - Simpan OCR result ke SQLite.
 
 ## Acceptance Criteria
-- [ ] OCR dapat membaca screenshot.
-- [ ] Bounding boxes tersedia.
-- [ ] OCR berjalan tanpa membekukan UI.
-- [ ] Result tersimpan ke database.
-- [ ] User dapat melihat extracted text.
+- [x] OCR dapat membaca screenshot.
+- [x] Bounding boxes tersedia.
+- [x] OCR berjalan tanpa membekukan UI.
+- [x] Result tersimpan ke database.
+- [x] User dapat melihat extracted text.
 
 ---
 

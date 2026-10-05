@@ -9,10 +9,11 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/test-sqlite-schema.mjs && node tests/test-image-picker.mjs && node tests/test-share-intent.mjs && node tests/test-analyze-pipeline.mjs"
+    "test": "node tests/test-sqlite-schema.mjs && node tests/test-image-picker.mjs && node tests/test-share-intent.mjs && node tests/test-analyze-pipeline.mjs && node tests/test-ocr-service.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@react-native-ml-kit/text-recognition": "^2.0.0",
     "@shopify/react-native-skia": "2.6.2",
     "expo": "~57.0.13",
     "expo-haptics": "~57.0.3",

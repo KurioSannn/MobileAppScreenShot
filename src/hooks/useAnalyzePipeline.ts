@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
-import { ScreenshotRow } from '../types';
+import { BoundingBox, ScreenshotRow } from '../types';
+import { ocrService, RecognizedOcrData } from '../services';
 
 export type PipelineStep =
   | 'idle'
@@ -27,12 +28,12 @@ export const PIPELINE_STEPS: StepDefinition[] = [
   {
     key: 'detecting_text',
     label: '2. Detecting text regions & layout',
-    description: 'Locating lines, bounding boxes, and bubble shapes',
+    description: 'Scanning lines, bounding boxes, and bubble shapes with local OCR',
   },
   {
     key: 'detecting_language',
     label: '3. Identifying language & entities',
-    description: 'Classifying Japanese, English, Indonesian, and dates',
+    description: 'Classifying Japanese, Korean, Chinese, English, Indonesian, and dates',
   },
   {
     key: 'finding_actions',
@@ -66,6 +67,8 @@ export interface UseAnalyzePipelineReturn {
   detectedLanguage: string | null;
   detectedEntities: DetectedEntityPreview[];
   suggestedActions: SuggestedActionItem[];
+  boundingBoxes: BoundingBox[];
+  ocrConfidence: number;
   startPipeline: () => void;
   cancelPipeline: () => void;
   retryPipeline: () => void;
@@ -73,7 +76,7 @@ export interface UseAnalyzePipelineReturn {
 
 /**
  * Custom hook to drive the progressive screenshot analysis pipeline
- * without blocking the UI or displaying fullscreen blank spinners.
+ * using native on-device OCR without blocking the UI or displaying fullscreen blank spinners.
  */
 export function useAnalyzePipeline(
   screenshot: ScreenshotRow | null
@@ -87,6 +90,8 @@ export function useAnalyzePipeline(
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
   const [detectedEntities, setDetectedEntities] = useState<DetectedEntityPreview[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<SuggestedActionItem[]>([]);
+  const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
+  const [ocrConfidence, setOcrConfidence] = useState(1.0);
 
   const cancelFlagRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,79 +128,152 @@ export function useAnalyzePipeline(
     setDetectedLanguage(null);
     setDetectedEntities([]);
     setSuggestedActions([]);
+    setBoundingBoxes([]);
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (_) {}
 
     // Stage 1 -> Stage 2: Reading image metadata completes quickly
-    timeoutRef.current = setTimeout(() => {
+    timeoutRef.current = setTimeout(async () => {
       if (cancelFlagRef.current) return;
       setCurrentStep('detecting_text');
       setProgress(40);
 
-      // Stage 2 -> Stage 3: Detecting text regions reveals preliminary OCR snippet
-      timeoutRef.current = setTimeout(() => {
-        if (cancelFlagRef.current) return;
-        setCurrentStep('detecting_language');
-        setProgress(70);
+      try {
+        // Execute On-Device OCR asynchronously (non-blocking)
+        const ocrResult: RecognizedOcrData = await ocrService.recognizeText(
+          screenshot.id,
+          screenshot.image_uri
+        );
 
-        // Progressively reveal extracted OCR text before whole pipeline completes
-        const mockSnippet =
-          screenshot.category === 'Manga'
-            ? 'お前は誰だ？…友達だ。(Who are you? ...A friend.)'
-            : 'Meeting Deadline: Friday 17:00 PM. Please review final proposal.';
-        setExtractedTextPreview(mockSnippet);
+        if (cancelFlagRef.current) return;
+
+        // Progressively reveal extracted OCR text & bounding boxes immediately
+        setExtractedTextPreview(ocrResult.text);
+        setBoundingBoxes(ocrResult.boundingBoxes);
+        setOcrConfidence(ocrResult.confidence);
+        setDetectedLanguage(`${ocrResult.language} (${ocrResult.languageCode})`);
 
         try {
           Haptics.selectionAsync();
         } catch (_) {}
 
-        // Stage 3 -> Stage 4: Detecting language & entities
+        // Stage 2 -> Stage 3: Detecting language & entities
         timeoutRef.current = setTimeout(() => {
           if (cancelFlagRef.current) return;
-          setCurrentStep('finding_actions');
-          setProgress(90);
+          setCurrentStep('detecting_language');
+          setProgress(70);
 
-          const lang = screenshot.category === 'Manga' ? 'Japanese (日本語)' : 'English (en)';
-          setDetectedLanguage(lang);
-
-          const entities: DetectedEntityPreview[] =
+          // Entity heuristic parsing based on extracted OCR text
+          const entities: DetectedEntityPreview[] = [];
+          if (
+            ocrResult.language === 'Japanese' ||
+            ocrResult.language === 'Korean' ||
             screenshot.category === 'Manga'
-              ? [{ type: 'manga_pattern', value: '2 Speech Bubbles', action: 'Manga Mode' }]
-              : [
-                  { type: 'date', value: 'Friday 17:00 PM', action: 'Set Reminder' },
-                  { type: 'other', value: 'Proposal Document', action: 'Copy Text' },
-                ];
+          ) {
+            entities.push({
+              type: 'manga_pattern',
+              value: `${ocrResult.boundingBoxes.length} Text Regions`,
+              action: 'Manga Mode',
+            });
+          }
+
+          if (/(\d{1,2}:\d{2}|deadline|meeting|friday|tomorrow)/i.test(ocrResult.text)) {
+            entities.push({
+              type: 'date',
+              value: 'Detected Deadline/Event',
+              action: 'Set Reminder',
+            });
+          }
+
+          if (entities.length === 0) {
+            entities.push({
+              type: 'other',
+              value: `${ocrResult.boundingBoxes.length} Text Lines`,
+              action: 'Copy Text',
+            });
+          }
+
           setDetectedEntities(entities);
 
-          // Stage 4 -> Completed
+          // Stage 3 -> Stage 4: Finding actions
           timeoutRef.current = setTimeout(() => {
             if (cancelFlagRef.current) return;
-            setCurrentStep('completed');
-            setProgress(100);
+            setCurrentStep('finding_actions');
+            setProgress(90);
 
-            const actions: SuggestedActionItem[] =
-              screenshot.category === 'Manga'
-                ? [
-                    { id: 'manga', label: 'Open in Manga Mode', iconName: 'book-outline', badge: 'Recommended', type: 'manga' },
-                    { id: 'translate', label: 'Translate to Indonesian', iconName: 'language-outline', type: 'translate' },
-                    { id: 'copy', label: 'Copy Japanese Text', iconName: 'copy-outline', type: 'copy' },
-                  ]
-                : [
-                    { id: 'translate', label: 'Translate to Indonesian', iconName: 'language-outline', badge: 'Auto', type: 'translate' },
-                    { id: 'reminder', label: 'Create Deadline Reminder', iconName: 'alarm-outline', badge: 'Detected', type: 'reminder' },
-                    { id: 'copy', label: 'Copy Extracted Text', iconName: 'copy-outline', type: 'copy' },
-                  ];
-            setSuggestedActions(actions);
+            // Stage 4 -> Completed
+            timeoutRef.current = setTimeout(() => {
+              if (cancelFlagRef.current) return;
+              setCurrentStep('completed');
+              setProgress(100);
 
-            try {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch (_) {}
+              const actions: SuggestedActionItem[] = [];
+
+              if (ocrResult.language === 'Japanese' || screenshot.category === 'Manga') {
+                actions.push(
+                  {
+                    id: 'manga',
+                    label: 'Open in Manga Mode',
+                    iconName: 'book-outline',
+                    badge: 'Recommended',
+                    type: 'manga',
+                  },
+                  {
+                    id: 'translate',
+                    label: 'Translate to Indonesian',
+                    iconName: 'language-outline',
+                    type: 'translate',
+                  },
+                  {
+                    id: 'copy',
+                    label: 'Copy Japanese Text',
+                    iconName: 'copy-outline',
+                    type: 'copy',
+                  }
+                );
+              } else {
+                actions.push(
+                  {
+                    id: 'translate',
+                    label: 'Translate to Indonesian',
+                    iconName: 'language-outline',
+                    badge: 'Auto',
+                    type: 'translate',
+                  },
+                  {
+                    id: 'reminder',
+                    label: 'Create Deadline Reminder',
+                    iconName: 'alarm-outline',
+                    badge: 'Detected',
+                    type: 'reminder',
+                  },
+                  {
+                    id: 'copy',
+                    label: 'Copy Extracted Text',
+                    iconName: 'copy-outline',
+                    type: 'copy',
+                  }
+                );
+              }
+
+              setSuggestedActions(actions);
+
+              try {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch (_) {}
+            }, 300);
           }, 350);
-        }, 400);
-      }, 450);
-    }, 300);
+        }, 350);
+      } catch (ocrErr) {
+        console.error('OCR pipeline execution error:', ocrErr);
+        if (!cancelFlagRef.current) {
+          setError('Failed to extract text from screenshot');
+          setCurrentStep('error');
+        }
+      }
+    }, 250);
   }, [screenshot]);
 
   const retryPipeline = useCallback(() => {
@@ -214,6 +292,7 @@ export function useAnalyzePipeline(
       setDetectedLanguage(null);
       setDetectedEntities([]);
       setSuggestedActions([]);
+      setBoundingBoxes([]);
     }
 
     return () => {
@@ -238,6 +317,8 @@ export function useAnalyzePipeline(
     detectedLanguage,
     detectedEntities,
     suggestedActions,
+    boundingBoxes,
+    ocrConfidence,
     startPipeline,
     cancelPipeline,
     retryPipeline,

@@ -444,12 +444,30 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
                   <Text style={styles.snippetText}>{pipeline.extractedTextPreview}</Text>
                 </View>
 
-                {pipeline.detectedLanguage && (
+                <View style={styles.ocrMetaRow}>
+                  {pipeline.detectedLanguage && (
+                    <View style={styles.langPillRow}>
+                      <Text style={styles.langPillLabel}>Language:</Text>
+                      <StatusBadge label={pipeline.detectedLanguage} status="info" />
+                    </View>
+                  )}
+                  {pipeline.boundingBoxes.length > 0 && (
+                    <View style={styles.langPillRow}>
+                      <Text style={styles.langPillLabel}>Regions:</Text>
+                      <StatusBadge
+                        label={`${pipeline.boundingBoxes.length} blocks`}
+                        status="neutral"
+                      />
+                    </View>
+                  )}
                   <View style={styles.langPillRow}>
-                    <Text style={styles.langPillLabel}>Language:</Text>
-                    <StatusBadge label={pipeline.detectedLanguage} status="info" />
+                    <Text style={styles.langPillLabel}>Confidence:</Text>
+                    <StatusBadge
+                      label={`${Math.round(pipeline.ocrConfidence * 100)}%`}
+                      status="success"
+                    />
                   </View>
-                )}
+                </View>
               </Card>
             )}
 
@@ -791,6 +809,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.sm,
     color: Colors.textPrimary,
     lineHeight: 20,
+  },
+  ocrMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
   },
   langPillRow: {
     flexDirection: 'row',
