@@ -6,6 +6,11 @@ export {
   translateMangaDialogueWithContext,
 } from './mangaDetectionService';
 
+export {
+  mangaBatchProcessor,
+  MangaBatchProcessor,
+} from './mangaBatchProcessor';
+
 export type {
   MangaRegionData,
   MangaDetectionInput,
@@ -13,3 +18,9 @@ export type {
   ContextualDialogueItem,
   ContextualTranslationResult,
 } from './mangaDetectionService';
+
+export type {
+  MangaBatchItem,
+  MangaBatchPageStatus,
+  BatchProcessingProgress,
+} from './mangaBatchProcessor';

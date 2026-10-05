@@ -514,11 +514,11 @@ User dapat menerjemahkan beberapa screenshot manga sekaligus.
 - Buat Start Reading setelah selesai.
 
 ## Acceptance Criteria
-- [ ] Minimal 2–20 pages dapat dimasukkan.
-- [ ] Processing tidak membuat UI freeze.
-- [ ] Failed page dapat Retry.
-- [ ] Completed page tidak diproses ulang.
-- [ ] Batch tidak dikunci premium.
+- [x] Minimal 2–20 pages dapat dimasukkan.
+- [x] Processing tidak membuat UI freeze.
+- [x] Failed page dapat Retry.
+- [x] Completed page tidak diproses ulang.
+- [x] Batch tidak dikunci premium.
 
 ---
 

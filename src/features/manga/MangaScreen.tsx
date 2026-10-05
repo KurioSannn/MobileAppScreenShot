@@ -23,6 +23,7 @@ import { translationService } from '../../services/translation';
 import { screenshotRepository } from '../../db';
 import { pickSingleScreenshot } from '../../utils';
 import { BubbleStyleOverride, MangaSkiaOverlay } from './MangaSkiaOverlay';
+import { MangaBatchModal } from './MangaBatchModal';
 
 export interface MangaScreenProps {
   onBack: () => void;
@@ -46,6 +47,9 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
   const [bubbleOverrides, setBubbleOverrides] = useState<Record<string, BubbleStyleOverride>>({});
   const [pageScreenshots, setPageScreenshots] = useState<ScreenshotRow[]>([]);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+
+  // Task 19: Batch Manga Processing
+  const [isBatchModalVisible, setIsBatchModalVisible] = useState(false);
 
   // Edit Translation & Translate Again States
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -392,6 +396,18 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
               activeOpacity={0.7}
             >
               <Ionicons name="expand-outline" size={20} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                try {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                } catch (_) {}
+                setIsBatchModalVisible(true);
+              }}
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="layers-outline" size={20} color={Colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={handlePickManga} style={styles.iconBtn} activeOpacity={0.7}>
               <Ionicons name="images-outline" size={20} color={Colors.textPrimary} />
@@ -1001,6 +1017,22 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
           </View>
         </View>
       </Modal>
+
+      {/* Batch Manga Processing Modal */}
+      <MangaBatchModal
+        visible={isBatchModalVisible}
+        onClose={() => setIsBatchModalVisible(false)}
+        initialScreenshots={pageScreenshots}
+        onStartReading={(batchPages) => {
+          if (batchPages.length > 0) {
+            setPageScreenshots(batchPages);
+            setCurrentPageIndex(0);
+            setScreenshot(batchPages[0] ?? null);
+            setSelectedRegion(null);
+            showToast(`Loaded ${batchPages.length} manga pages!`);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 };
