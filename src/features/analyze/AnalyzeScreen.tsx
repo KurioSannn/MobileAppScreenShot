@@ -23,7 +23,7 @@ import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
 import { ScreenshotRow } from '../../types';
 import { pickMultipleScreenshots, pickSingleScreenshot } from '../../utils';
 import { PIPELINE_STEPS, useAnalyzePipeline } from '../../hooks';
-import { TextExtractionView } from './TextExtractionView';
+import { TextExtractionView, TranslationCard } from './index';
 
 interface AnalyzeScreenProps {
   onBack: () => void;
@@ -508,6 +508,15 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
                 onSelectBlock={pipeline.selectBlock}
                 onSaveEditedText={pipeline.saveEditedText}
                 onRevertToOriginal={pipeline.revertToOriginal}
+              />
+            )}
+
+            {/* Progressive Result 2: Translation Card */}
+            {(pipeline.extractedTextPreview || pipeline.rawText) && (
+              <TranslationCard
+                screenshotId={currentScreenshot.id}
+                sourceText={pipeline.extractedTextPreview || pipeline.rawText}
+                detectedLanguage={pipeline.detectedLanguage}
               />
             )}
 

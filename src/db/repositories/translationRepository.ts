@@ -45,6 +45,22 @@ export const translationRepository = {
   },
 
   /**
+   * Retrieves a cached translation matching screenshotId, originalText, and targetLanguage.
+   */
+  async getCachedTranslation(
+    screenshotId: string,
+    originalText: string,
+    targetLanguage: string
+  ): Promise<TranslationRow | null> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<TranslationRow>(
+      'SELECT * FROM translations WHERE screenshot_id = ? AND original_text = ? AND target_language = ? ORDER BY created_at DESC LIMIT 1',
+      [screenshotId, originalText.trim(), targetLanguage]
+    );
+    return row ?? null;
+  },
+
+  /**
    * Retrieves all translations for a given screenshot.
    */
   async getTranslationsByScreenshotId(screenshotId: string): Promise<TranslationRow[]> {

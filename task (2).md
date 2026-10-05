@@ -271,12 +271,12 @@ User dapat menerjemahkan hasil OCR.
 - Tambahkan Translate Again.
 
 ## Acceptance Criteria
-- [ ] Japanese → Indonesian bekerja.
-- [ ] Korean → Indonesian bekerja.
-- [ ] Chinese → Indonesian bekerja.
-- [ ] English ↔ Indonesian bekerja.
-- [ ] Translation result tersimpan.
-- [ ] Cached result tidak diproses ulang tanpa alasan.
+- [x] Japanese → Indonesian bekerja.
+- [x] Korean → Indonesian bekerja.
+- [x] Chinese → Indonesian bekerja.
+- [x] English ↔ Indonesian bekerja.
+- [x] Translation result tersimpan.
+- [x] Cached result tidak diproses ulang tanpa alasan.
 
 ---
 
