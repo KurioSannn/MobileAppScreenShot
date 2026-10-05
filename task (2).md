@@ -307,11 +307,11 @@ Deadline 12 Oct 23:59
 ```
 
 ## Acceptance Criteria
-- [ ] Date/time dapat dikenali.
-- [ ] URL dapat dikenali.
-- [ ] Harga dapat dikenali.
-- [ ] Foreign language memunculkan Translate.
-- [ ] Suggested actions relevan dengan isi screenshot.
+- [x] Date/time dapat dikenali.
+- [x] URL dapat dikenali.
+- [x] Harga dapat dikenali.
+- [x] Foreign language memunculkan Translate.
+- [x] Suggested actions relevan dengan isi screenshot.
 
 ---
 

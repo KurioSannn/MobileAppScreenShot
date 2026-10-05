@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { BoundingBox, ScreenshotRow } from '../types';
-import { ocrService, RecognizedOcrData } from '../services';
+import { ocrService, RecognizedOcrData, entityService, DetectedEntity } from '../services';
 
 export type PipelineStep =
   | 'idle'
@@ -68,7 +68,7 @@ export interface UseAnalyzePipelineReturn {
   correctedText: string | null;
   isCorrected: boolean;
   detectedLanguage: string | null;
-  detectedEntities: DetectedEntityPreview[];
+  detectedEntities: DetectedEntity[];
   suggestedActions: SuggestedActionItem[];
   boundingBoxes: BoundingBox[];
   blocks: Array<{ id: string; text: string; box: BoundingBox }>;
@@ -98,7 +98,7 @@ export function useAnalyzePipeline(
   const [rawText, setRawText] = useState<string | null>(null);
   const [correctedText, setCorrectedText] = useState<string | null>(null);
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
-  const [detectedEntities, setDetectedEntities] = useState<DetectedEntityPreview[]>([]);
+  const [detectedEntities, setDetectedEntities] = useState<DetectedEntity[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<SuggestedActionItem[]>([]);
   const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
   const [blocks, setBlocks] = useState<Array<{ id: string; text: string; box: BoundingBox }>>([]);
@@ -179,41 +179,20 @@ export function useAnalyzePipeline(
         } catch (_) {}
 
         // Stage 2 -> Stage 3: Detecting language & entities
-        timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = setTimeout(async () => {
           if (cancelFlagRef.current) return;
           setCurrentStep('detecting_language');
           setProgress(70);
 
-          // Entity heuristic parsing based on extracted OCR text
-          const entities: DetectedEntityPreview[] = [];
-          if (
-            ocrResult.language === 'Japanese' ||
-            ocrResult.language === 'Korean' ||
-            screenshot.category === 'Manga'
-          ) {
-            entities.push({
-              type: 'manga_pattern',
-              value: `${ocrResult.boundingBoxes.length} Text Regions`,
-              action: 'Manga Mode',
-            });
-          }
+          // Entity heuristic parsing and SQLite persistence
+          const entities = await entityService.detectAndSaveEntities(
+            screenshot.id,
+            ocrResult.activeText,
+            screenshot.category,
+            ocrResult.boundingBoxes
+          );
 
-          if (/(\d{1,2}:\d{2}|deadline|meeting|friday|tomorrow)/i.test(ocrResult.text)) {
-            entities.push({
-              type: 'date',
-              value: 'Detected Deadline/Event',
-              action: 'Set Reminder',
-            });
-          }
-
-          if (entities.length === 0) {
-            entities.push({
-              type: 'other',
-              value: `${ocrResult.boundingBoxes.length} Text Lines`,
-              action: 'Copy Text',
-            });
-          }
-
+          if (cancelFlagRef.current) return;
           setDetectedEntities(entities);
 
           // Stage 3 -> Stage 4: Finding actions
@@ -313,11 +292,20 @@ export function useAnalyzePipeline(
       await ocrService.updateCorrectedText(screenshot.id, trimmed);
       setCorrectedText(trimmed);
       setExtractedTextPreview(trimmed);
+
+      const updatedEntities = await entityService.detectAndSaveEntities(
+        screenshot.id,
+        trimmed,
+        screenshot.category,
+        boundingBoxes
+      );
+      setDetectedEntities(updatedEntities);
+
       try {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (_) {}
     },
-    [screenshot]
+    [screenshot, boundingBoxes]
   );
 
   const revertToOriginal = useCallback(async () => {
@@ -325,10 +313,19 @@ export function useAnalyzePipeline(
     await ocrService.revertCorrectedText(screenshot.id);
     setCorrectedText(null);
     setExtractedTextPreview(rawText);
+
+    const revertedEntities = await entityService.detectAndSaveEntities(
+      screenshot.id,
+      rawText,
+      screenshot.category,
+      boundingBoxes
+    );
+    setDetectedEntities(revertedEntities);
+
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (_) {}
-  }, [screenshot, rawText]);
+  }, [screenshot, rawText, boundingBoxes]);
 
   // Trigger analysis pipeline automatically whenever the target screenshot changes
   useEffect(() => {

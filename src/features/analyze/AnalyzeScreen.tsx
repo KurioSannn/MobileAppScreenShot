@@ -23,11 +23,12 @@ import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
 import { ScreenshotRow } from '../../types';
 import { pickMultipleScreenshots, pickSingleScreenshot } from '../../utils';
 import { PIPELINE_STEPS, useAnalyzePipeline } from '../../hooks';
-import { TextExtractionView, TranslationCard } from './index';
+import { TextExtractionView, TranslationCard, EntityChipsView } from './index';
 
 interface AnalyzeScreenProps {
   onBack: () => void;
   onOpenMangaMode?: () => void;
+  onCreateReminder?: (title: string, snippet: string) => void;
   initialScreenshot?: ScreenshotRow | null;
   initialBatch?: ScreenshotRow[];
   intentError?: string | null;
@@ -38,6 +39,7 @@ interface AnalyzeScreenProps {
 export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
   onBack,
   onOpenMangaMode,
+  onCreateReminder,
   initialScreenshot = null,
   initialBatch = [],
   intentError = null,
@@ -517,6 +519,15 @@ export const AnalyzeScreen: React.FC<AnalyzeScreenProps> = ({
                 screenshotId={currentScreenshot.id}
                 sourceText={pipeline.extractedTextPreview || pipeline.rawText}
                 detectedLanguage={pipeline.detectedLanguage}
+              />
+            )}
+
+            {/* Progressive Result 3: Detected Entities & Actions */}
+            {pipeline.detectedEntities.length > 0 && (
+              <EntityChipsView
+                entities={pipeline.detectedEntities}
+                onOpenMangaMode={onOpenMangaMode}
+                onCreateReminder={onCreateReminder}
               />
             )}
 
