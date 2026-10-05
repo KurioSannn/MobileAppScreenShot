@@ -383,10 +383,10 @@ User dapat mencari screenshot berdasarkan isi teks.
 - Optimize query untuk local database.
 
 ## Acceptance Criteria
-- [ ] Query `deadline` menemukan screenshot yang mengandung deadline.
-- [ ] Translation ikut searchable.
-- [ ] Search tetap responsif dengan banyak data.
-- [ ] Empty result memiliki state yang jelas.
+- [x] Query `deadline` menemukan screenshot yang mengandung deadline.
+- [x] Translation ikut searchable.
+- [x] Search tetap responsif dengan banyak data.
+- [x] Empty result memiliki state yang jelas.
 
 ---
 

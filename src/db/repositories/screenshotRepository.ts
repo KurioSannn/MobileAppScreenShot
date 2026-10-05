@@ -157,10 +157,13 @@ export const screenshotRepository = {
    */
   async searchScreenshots(query: string, limit = 50): Promise<ScreenshotWithDetails[]> {
     const db = await getDatabase();
-    const term = `%${query.trim()}%`;
+    const clean = query.trim();
+    if (!clean) return [];
+
+    const term = `%${clean}%`;
 
     const sql = `
-      SELECT DISTINCT
+      SELECT 
         s.id,
         s.image_uri,
         s.width,
@@ -169,23 +172,24 @@ export const screenshotRepository = {
         s.source_app,
         s.category,
         s.notes,
-        ocr.text AS ocr_text,
-        ocr.language AS language,
-        tr.translated_text AS translated_text
+        (SELECT ocr.language FROM ocr_results ocr WHERE ocr.screenshot_id = s.id LIMIT 1) AS language,
+        (SELECT ocr.text FROM ocr_results ocr WHERE ocr.screenshot_id = s.id LIMIT 1) AS ocr_text,
+        (SELECT tr.translated_text FROM translations tr WHERE tr.screenshot_id = s.id LIMIT 1) AS translated_text,
+        (SELECT GROUP_CONCAT(tg.name, ', ') FROM tags tg WHERE tg.screenshot_id = s.id) AS matched_tags,
+        (SELECT COUNT(*) FROM reminders r WHERE r.screenshot_id = s.id) AS reminder_count
       FROM screenshots s
-      LEFT JOIN ocr_results ocr ON s.id = ocr.screenshot_id
-      LEFT JOIN translations tr ON s.id = tr.screenshot_id
-      LEFT JOIN tags tg ON s.id = tg.screenshot_id
-      WHERE ocr.text LIKE ?
-         OR tr.translated_text LIKE ?
-         OR s.notes LIKE ?
-         OR s.category LIKE ?
-         OR tg.name LIKE ?
+      WHERE (
+        s.id IN (SELECT screenshot_id FROM ocr_results WHERE text LIKE ?)
+        OR s.id IN (SELECT screenshot_id FROM translations WHERE translated_text LIKE ?)
+        OR s.id IN (SELECT screenshot_id FROM tags WHERE name LIKE ?)
+        OR s.category LIKE ?
+        OR s.notes LIKE ?
+      )
       ORDER BY s.created_at DESC
       LIMIT ?
     `;
 
-    const rows = await db.getAllAsync<ScreenshotWithDetails>(sql, [
+    const rows = await db.getAllAsync<any>(sql, [
       term,
       term,
       term,
@@ -194,7 +198,27 @@ export const screenshotRepository = {
       limit,
     ]);
 
-    return rows;
+    return rows.map((row) => {
+      const tags = row.matched_tags
+        ? row.matched_tags.split(',').map((t: string) => t.trim())
+        : [];
+
+      return {
+        id: row.id,
+        image_uri: row.image_uri,
+        width: row.width,
+        height: row.height,
+        created_at: row.created_at,
+        source_app: row.source_app,
+        category: row.category,
+        notes: row.notes,
+        language: row.language ?? null,
+        ocr_text: row.ocr_text ?? null,
+        translated_text: row.translated_text ?? null,
+        tags,
+        reminder_count: Number(row.reminder_count ?? 0),
+      };
+    });
   },
 
   /**

@@ -137,7 +137,9 @@ export default function App() {
       )}
 
       {currentRoute === 'search' && (
-        <SearchScreen />
+        <SearchScreen
+          onSelectScreenshot={(sc) => handleOpenAnalyze(sc, [sc])}
+        />
       )}
 
       {currentRoute === 'settings' && (
