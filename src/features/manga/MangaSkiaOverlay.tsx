@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Canvas, Path, Paint, Skia } from '@shopify/react-native-skia';
+import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { MangaRegionData } from '../../services/manga';
+import { MangaRenderMode } from '../../types';
 import { Colors, Radius, Typography } from '../../theme/tokens';
 
 export interface MangaSkiaOverlayProps {
@@ -11,8 +12,38 @@ export interface MangaSkiaOverlayProps {
   imageWidth?: number;
   imageHeight?: number;
   mode: 'original' | 'translated';
+  renderMode?: MangaRenderMode;
   selectedRegionId?: string | null;
   onSelectRegion?: (region: MangaRegionData) => void;
+}
+
+/**
+ * Calculates readable adaptive font size so translated text fits neatly inside bubble
+ * without harsh clipping, while never dropping below minSize (9pt).
+ */
+export function calculateAdaptiveFontSize(
+  text: string,
+  boxWidth: number,
+  boxHeight: number,
+  minSize = 9,
+  maxSize = 16
+): number {
+  if (!text || boxWidth <= 0 || boxHeight <= 0) return 11;
+
+  const charCount = text.length;
+  for (let size = maxSize; size >= minSize; size--) {
+    const charWidth = size * 0.58;
+    const lineHeight = size * 1.25;
+    const charsPerLine = Math.max(1, Math.floor((boxWidth - 12) / charWidth));
+    const linesNeeded = Math.ceil(charCount / charsPerLine);
+    const totalHeightNeeded = linesNeeded * lineHeight;
+
+    if (totalHeightNeeded <= boxHeight - 6) {
+      return size;
+    }
+  }
+
+  return minSize;
 }
 
 export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
@@ -22,6 +53,7 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
   imageWidth = 1080,
   imageHeight = 1920,
   mode,
+  renderMode = 'replace',
   selectedRegionId,
   onSelectRegion,
 }) => {
@@ -29,11 +61,11 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
     return null;
   }
 
-  // Calculate scale factor from original image dimensions to container
+  // Calculate scaling ratio from raw image coordinates to current container
   const scaleX = containerWidth / Math.max(1, imageWidth);
   const scaleY = containerHeight / Math.max(1, imageHeight);
 
-  // Helper to build Skia path from polygon points
+  // Build Skia vector path from polygon vertices
   const buildSkiaPath = (polygon: Array<[number, number]>) => {
     if (!polygon || polygon.length === 0) return null;
     try {
@@ -57,7 +89,7 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
 
   return (
     <View style={[StyleSheet.absoluteFill, { width: containerWidth, height: containerHeight }]}>
-      {/* Skia Canvas Rendering Layer for Polygons, Fills & Borders */}
+      {/* Skia Canvas Rendering Layer for Polygons, Inpainting & Borders */}
       <Canvas style={StyleSheet.absoluteFill}>
         {regions.map((region) => {
           const path = buildSkiaPath(region.polygon);
@@ -66,32 +98,62 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
           const isSelected = selectedRegionId === region.id;
           const isNarration = region.region_type === 'narration';
 
-          // Bubble background fill color
-          const fillColor = isNarration
-            ? 'rgba(255, 252, 235, 0.95)' // Warm parchment for narration
-            : 'rgba(255, 255, 255, 0.96)'; // Clean white inpainting for dialogue bubble
+          // Effective render mode: low-confidence fallback uses 'floating' so artwork is never covered
+          const effectiveRenderMode: MangaRenderMode =
+            region.confidence < 0.9 && renderMode === 'replace' ? 'floating' : renderMode;
 
-          // Border stroke color
-          const strokeColor = isSelected
-            ? '#F5B031' // Amber selection highlight
-            : isNarration
-            ? '#8C7A58'
-            : '#2C2B29'; // Clean comic line ink
+          // 1. Text Replace Mode: Solid clean inpainting fill
+          if (effectiveRenderMode === 'replace') {
+            const fillColor = isNarration
+              ? 'rgba(255, 252, 235, 0.98)' // Warm parchment for narration
+              : 'rgba(255, 255, 255, 0.98)'; // Clean white inpainting for dialogue
+            const strokeColor = isSelected ? '#F5B031' : isNarration ? '#8C7A58' : '#2C2B29';
 
-          return (
-            <React.Fragment key={region.id}>
-              {/* Fill / Inpainting Path */}
-              <Path path={path} color={fillColor} style="fill" />
+            return (
+              <React.Fragment key={region.id}>
+                <Path path={path} color={fillColor} style="fill" />
+                <Path
+                  path={path}
+                  color={strokeColor}
+                  style="stroke"
+                  strokeWidth={isSelected ? 2.5 : 1.5}
+                />
+              </React.Fragment>
+            );
+          }
 
-              {/* Stroke Border Path */}
+          // 2. Frosted Glass Mode: Semi-transparent blur overlay
+          if (effectiveRenderMode === 'glass') {
+            const glassFill = 'rgba(255, 255, 255, 0.52)';
+            const glassStroke = isSelected ? '#F5B031' : 'rgba(255, 255, 255, 0.85)';
+
+            return (
+              <React.Fragment key={region.id}>
+                <Path path={path} color={glassFill} style="fill" />
+                <Path
+                  path={path}
+                  color={glassStroke}
+                  style="stroke"
+                  strokeWidth={isSelected ? 2.5 : 1.5}
+                />
+              </React.Fragment>
+            );
+          }
+
+          // 3. Floating Subtitle Mode: Transparent path with subtle active border if selected
+          if (isSelected) {
+            return (
               <Path
+                key={region.id}
                 path={path}
-                color={strokeColor}
+                color="#F5B031"
                 style="stroke"
-                strokeWidth={isSelected ? 2.5 : 1.5}
+                strokeWidth={2}
               />
-            </React.Fragment>
-          );
+            );
+          }
+
+          return null;
         })}
       </Canvas>
 
@@ -100,13 +162,21 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
         const isSelected = selectedRegionId === region.id;
         const boxX = region.box.x * scaleX;
         const boxY = region.box.y * scaleY;
-        const boxW = Math.max(40, region.box.width * scaleX);
-        const boxH = Math.max(30, region.box.height * scaleY);
+        const boxW = Math.max(44, region.box.width * scaleX);
+        const boxH = Math.max(32, region.box.height * scaleY);
 
         const displayedText =
           mode === 'translated'
             ? region.translated_text || region.original_text || ''
             : region.original_text || '';
+
+        // Dynamic auto-scaling font size
+        const fontSize = calculateAdaptiveFontSize(displayedText, boxW, boxH, 9, 15);
+        const lineHeight = Math.round(fontSize * 1.25);
+
+        // Effective render mode (low confidence defaults to floating)
+        const effectiveRenderMode: MangaRenderMode =
+          region.confidence < 0.9 && renderMode === 'replace' ? 'floating' : renderMode;
 
         return (
           <TouchableOpacity
@@ -134,18 +204,35 @@ export const MangaSkiaOverlay: React.FC<MangaSkiaOverlayProps> = ({
               <Text style={styles.orderNumber}>{region.reading_order}</Text>
             </View>
 
-            {/* Bubble Typeset Text */}
+            {/* Bubble Typeset Text with Adaptive Font Sizing */}
             <View style={styles.textContainer}>
-              <Text
-                style={[
-                  styles.bubbleText,
-                  region.region_type === 'narration' && styles.narrationText,
-                  mode === 'original' && styles.originalJapaneseText,
-                ]}
-                numberOfLines={4}
-              >
-                {displayedText}
-              </Text>
+              {effectiveRenderMode === 'floating' ? (
+                <View style={styles.floatingSubtitlePill}>
+                  <Text
+                    style={[
+                      styles.floatingSubtitleText,
+                      { fontSize, lineHeight },
+                      mode === 'original' && styles.originalJapaneseText,
+                    ]}
+                    numberOfLines={4}
+                  >
+                    {displayedText}
+                  </Text>
+                </View>
+              ) : (
+                <Text
+                  style={[
+                    styles.bubbleText,
+                    { fontSize, lineHeight },
+                    region.region_type === 'narration' && styles.narrationText,
+                    mode === 'original' && styles.originalJapaneseText,
+                    effectiveRenderMode === 'glass' && styles.glassText,
+                  ]}
+                  numberOfLines={5}
+                >
+                  {displayedText}
+                </Text>
+              )}
             </View>
           </TouchableOpacity>
         );
@@ -159,16 +246,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 4,
+    padding: 2,
   },
   orderBadge: {
     position: 'absolute',
-    top: -8,
-    right: -8,
+    top: -7,
+    right: -7,
     width: 20,
     height: 20,
     borderRadius: Radius.pill,
-    backgroundColor: '#6847B8', // Soft Iris purple
+    backgroundColor: '#6847B8',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -181,10 +268,10 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   orderBadgeSelected: {
-    backgroundColor: '#F5B031', // Amber when selected
+    backgroundColor: '#F5B031',
   },
   orderBadgeNarration: {
-    backgroundColor: '#4A5568', // Slate for narration
+    backgroundColor: '#4A5568',
   },
   orderNumber: {
     color: '#FFFFFF',
@@ -199,21 +286,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   bubbleText: {
-    fontSize: 11,
     fontWeight: '700',
     color: '#1E1E1E',
     textAlign: 'center',
-    lineHeight: 14,
   },
   narrationText: {
-    fontSize: 10,
     fontStyle: 'italic',
-    color: '#333333',
+    color: '#2A2926',
+  },
+  glassText: {
+    color: '#111111',
+    fontWeight: '800',
   },
   originalJapaneseText: {
     fontFamily: 'System',
-    fontSize: 12,
     fontWeight: '600',
     color: '#111111',
+  },
+  floatingSubtitlePill: {
+    backgroundColor: 'rgba(28, 28, 30, 0.82)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  floatingSubtitleText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });

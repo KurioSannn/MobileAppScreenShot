@@ -456,11 +456,11 @@ Menampilkan translation tanpa menutupi artwork secara berlebihan.
 - Terapkan minimum readable font size.
 
 ## Acceptance Criteria
-- [ ] Translation mengikuti bubble.
-- [ ] Text tidak overflow.
-- [ ] Font tidak menjadi terlalu kecil.
-- [ ] Low-confidence menggunakan Floating Mode.
-- [ ] Artwork tidak tertutup giant rectangle.
+- [x] Translation mengikuti bubble.
+- [x] Text tidak overflow.
+- [x] Font tidak menjadi terlalu kecil.
+- [x] Low-confidence menggunakan Floating Mode.
+- [x] Artwork tidak tertutup giant rectangle.
 
 ---
 
@@ -667,3 +667,22 @@ Produk belum perlu monetisasi.
 Fokus release pertama:
 
 > **Cepat, berguna, rapi, dan cukup nyaman sampai user ingin kembali memakai Snaply.**
+
+---
+
+# Task 21 — Floating Screen Capture Overlay & Quick Trigger (Future Backlog)
+
+## Goal
+Menyediakan floating overlay button global yang dapat melayang di atas aplikasi lain dan langsung mengambil screenshot layar menggunakan native Android MediaProjection API.
+
+## Pekerjaan (Future Exploration)
+- Konfigurasi permission `SYSTEM_ALERT_WINDOW` ("Draw over other apps").
+- Implementasi Android Foreground Service dengan floating bubble view.
+- Integrasi Android `MediaProjection` API untuk tangkapan layar instan 1-tap.
+- Direct pipeline forwarding ke Snaply OCR/Manga Mode tanpa perlu membuka galeri/share sheet manual.
+
+## Acceptance Criteria
+- [ ] Tombol floating dapat diaktifkan dari pengaturan.
+- [ ] Tombol tetap melayang saat membuka aplikasi lain (browser, manga reader).
+- [ ] Mengetuk tombol langsung menangkap layar dan meneruskan gambar ke Snaply pipeline.
+

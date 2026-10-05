@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { StatusBadge, PrimaryButton } from '../../components';
 import { Colors, Radius, Spacing, Typography } from '../../theme/tokens';
-import { ReadingDirection, ScreenshotRow } from '../../types';
+import { MangaRenderMode, ReadingDirection, ScreenshotRow } from '../../types';
 import { mangaDetectionService, MangaRegionData } from '../../services/manga';
 import { pickSingleScreenshot } from '../../utils';
 import { MangaSkiaOverlay } from './MangaSkiaOverlay';
@@ -30,6 +30,7 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
   const [screenshot, setScreenshot] = useState<ScreenshotRow | null>(initialScreenshot);
   const [mode, setMode] = useState<'translated' | 'original'>('translated');
   const [readingDir, setReadingDir] = useState<ReadingDirection>('rtl');
+  const [renderMode, setRenderMode] = useState<MangaRenderMode>('replace');
   const [regions, setRegions] = useState<MangaRegionData[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<MangaRegionData | null>(null);
@@ -221,6 +222,43 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
         </TouchableOpacity>
       </View>
 
+      {/* 3 Render Modes Selector: Replace | Glass | Floating */}
+      <View style={styles.renderModeBar}>
+        <View style={styles.renderModeContainer}>
+          {(['replace', 'glass', 'floating'] as const).map((rMode) => {
+            const isActive = renderMode === rMode;
+            const label =
+              rMode === 'replace'
+                ? 'Replace 🪄'
+                : rMode === 'glass'
+                ? 'Glass 🪟'
+                : 'Floating 💬';
+            return (
+              <TouchableOpacity
+                key={rMode}
+                style={[styles.renderModeBtn, isActive && styles.renderModeBtnActive]}
+                onPress={() => {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch (_) {}
+                  setRenderMode(rMode);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.renderModeBtnText,
+                    isActive && styles.renderModeBtnTextActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       {/* Manga Canvas Viewer Container */}
       <View style={styles.canvasContainer} onLayout={handleLayout}>
         <View style={styles.canvasFrame}>
@@ -251,6 +289,7 @@ export const MangaScreen: React.FC<MangaScreenProps> = ({ onBack, initialScreens
               imageWidth={screenshot?.width || 1080}
               imageHeight={screenshot?.height || 1920}
               mode={mode}
+              renderMode={renderMode}
               selectedRegionId={selectedRegion?.id}
               onSelectRegion={(reg) => {
                 try {
@@ -489,6 +528,38 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   dirBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  renderModeBar: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.xs,
+  },
+  renderModeContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.pill,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  renderModeBtn: {
+    flex: 1,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  renderModeBtnActive: {
+    backgroundColor: Colors.primary,
+  },
+  renderModeBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  renderModeBtnTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
   },
