@@ -127,7 +127,10 @@ export default function App() {
       )}
 
       {currentRoute === 'manga' && (
-        <MangaScreen onBack={handleBackToHome} />
+        <MangaScreen
+          onBack={handleBackToHome}
+          initialScreenshot={activeScreenshot}
+        />
       )}
 
       {currentRoute === 'library' && (

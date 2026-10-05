@@ -406,10 +406,10 @@ Mendeteksi text region / speech bubble untuk Manga Mode.
 - Cocokkan OCR text dengan region.
 
 ## Acceptance Criteria
-- [ ] Minimal text region dapat ditemukan.
-- [ ] OCR text terhubung ke manga region.
-- [ ] Confidence tersedia.
-- [ ] Low-confidence region dapat dibedakan.
+- [x] Minimal text region dapat ditemukan.
+- [x] OCR text terhubung ke manga region.
+- [x] Confidence tersedia.
+- [x] Low-confidence region dapat dibedakan.
 
 ---
 
